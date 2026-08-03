@@ -1,0 +1,15 @@
+services:
+  naver-works-mcp:
+    build: .
+    image: naver-works-mcp:local
+    env_file:
+      - .env
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8787"
+      MCP_ALLOWED_HOSTS: "localhost,127.0.0.1,[::1],naver-works-mcp,hermes"
+    expose:
+      - "8787"
+    ports:
+      - "127.0.0.1:${MCP_PUBLISH_PORT:-8787}:8787"
