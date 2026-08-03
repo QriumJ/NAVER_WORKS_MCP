@@ -29,9 +29,11 @@ OAuth 로그인·Refresh Token 갱신·Service Account JWT 서명은 이 저장�
 이미 이 폴더가 있다면 이 단계는 건너뛰세요.
 
 ```powershell
-git clone https://github.com/QriumJ/NAVER_WORKS_MCP.git
+git clone --branch codex/naver-works-mcp https://github.com/QriumJ/NAVER_WORKS_MCP.git NAVER_WORKS_MCP
 Set-Location NAVER_WORKS_MCP
 ```
+
+현재 완성본은 초안 PR 브랜치에 있습니다. PR이 `main`에 병합된 뒤에는 `--branch codex/naver-works-mcp`를 빼고 기본 브랜치를 내려받아도 됩니다.
 
 ### 2) 설치하고 설정 파일 만들기
 
@@ -85,6 +87,29 @@ NAVER WORKS에서 내 프로필을 조회해 줘.
 ```
 
 연습 모드에서는 `mock-user`가 반환됩니다. 응답이 오면 Hermes ↔ MCP 연결은 끝난 것입니다.
+
+## Hermes 채팅으로 설치시키는 지시문
+
+Hermes가 터미널과 파일을 실행할 수 있다면 아래 지시문 전체를 Hermes 채팅에 붙여 넣으세요. Hermes가 실행 권한을 지원하지 않는 경우에는 명령을 대신 보여 달라고 요청하고, 이 README의 명령을 직접 실행하면 됩니다.
+
+```text
+내 Windows PC에 NAVER WORKS MCP를 설치하고 Hermes에 연결해 줘.
+
+규칙:
+1. 먼저 Node.js 20.11 이상, npm, Git이 설치되어 있는지 확인하고 결과를 알려 줘.
+2. C:\Users\Home\Documents\네이버웍스 폴더를 작업 폴더로 사용해. 이미 저장소가 있으면 파일을 삭제하지 말고 현재 변경사항과 브랜치를 먼저 확인해.
+3. 저장소가 없으면 다음 브랜치를 내려받아:
+   git clone --branch codex/naver-works-mcp https://github.com/QriumJ/NAVER_WORKS_MCP.git NAVER_WORKS_MCP
+4. 저장소 폴더에서 npm install과 npm run build를 실행해.
+5. 실제 토큰을 요구하거나 출력하지 말고, NAVER_WORKS_MOCK=true로 npm test를 실행해 22개 테스트 결과를 확인해.
+6. Hermes MCP 서버를 stdio로 등록해. command는 node, args는 dist/index.js의 절대 경로, 환경 변수는 MCP_TRANSPORT=stdio와 NAVER_WORKS_MOCK=true로 설정해.
+7. 설치·빌드·테스트·등록 결과를 단계별로 보고하고, 실패하면 원인과 다음 명령만 알려 줘.
+8. NAVER_WORKS_ACCESS_TOKEN, 비밀번호, 개인정보를 채팅에 출력하거나 Git에 커밋하지 마.
+9. 실제 NAVER WORKS 연결은 내가 별도로 OAuth 토큰을 준비했다고 말한 뒤에만 진행해. 그때도 토큰 값은 화면에 다시 출력하지 말고 환경 변수나 Secret Manager에만 저장해.
+10. 쓰기·삭제·메시지 전송 기능은 추가하지 말고, 현재 읽기 전용 도구만 등록해.
+```
+
+Hermes가 “설치 완료”라고 답하면 채팅에서 `NAVER WORKS에서 내 프로필을 조회해 줘`라고 테스트하세요. 실제 데이터를 연결할 때만 `NAVER_WORKS_MOCK=false`와 외부 Token Provider가 발급한 Access Token을 설정합니다.
 
 ## 실제 NAVER WORKS API 연결
 
