@@ -66,7 +66,7 @@ export function loadConfig(): AppConfig {
     throw new Error("Remote HTTP binding requires an MCP_SHARED_SECRET of at least 32 characters and a TLS-authenticated reverse proxy");
   }
 
-  const scopeValues = (env("NAVER_WORKS_SCOPES") ?? "calendar.read,contact.read,directory.read,user.profile.read")
+  const scopeValues = (env("NAVER_WORKS_SCOPES") ?? "calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read")
     .split(/[\s,]+/)
     .map((scope) => scope.trim())
     .filter(Boolean);

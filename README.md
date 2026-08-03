@@ -1,16 +1,16 @@
 # NAVER WORKS MCP
 
-Hermes에서 자연어로 NAVER WORKS의 **일정·연락처·구성원 정보**를 조회하게 해 주는 MCP 서버입니다. 처음에는 안전한 읽기 전용으로 동작하며, MCP 프로토콜 `2026-07-28`의 무상태 HTTP 규칙과 로컬 stdio 연결을 함께 제공합니다.
+Hermes에서 자연어로 NAVER WORKS의 **일정·구성원·그룹·공지 정보**를 조회하게 해 주는 MCP 서버입니다. 추천도가 중간 이하인 Contact·Drive·Security 계열은 노출하지 않고, 안전한 읽기 전용으로 동작합니다. MCP 프로토콜 `2026-07-28`의 무상태 HTTP 규칙과 로컬 stdio 연결을 함께 제공합니다.
 
 > 처음 사용하는 분은 [비개발자용 HTML 설명서](docs/hermes_naver_works_setup.html)를 먼저 여세요. 화면에서 순서대로 따라 하면 됩니다.
 
 ## 이 프로젝트가 하는 일
 
 - Hermes가 MCP 도구를 호출하면 NAVER WORKS API에 읽기 요청을 보냅니다.
-- 일정 속성, 일정 목록, 연락처 검색, 조직 구성원 목록/프로필을 제공합니다.
+- 일정 속성/목록, 조직 구성원/그룹/조직 목록과 프로필, 게시판·그룹 노트 공지, 할 일·Bot·설문 메타데이터를 제공합니다.
 - 기본값은 로컬 컴퓨터에서만 실행되는 `stdio`입니다. 인터넷에 공개하지 않아 가장 안전합니다.
 - 실제 토큰이 없을 때는 `NAVER_WORKS_MOCK=true`로 연결 연습과 계약 테스트를 할 수 있습니다.
-- 메시지 보내기, 수정/삭제, Mail·Drive·Board·Task·Form 같은 기능은 현재 등록하지 않았습니다.
+- 메시지 보내기, 수정/삭제, Contact·Mail·Drive·Security·Audit·Archive 기능은 등록하지 않았습니다. Board/Note는 공지 읽기에 필요한 최소 조회만 제공합니다.
 
 ## 먼저 준비할 것
 
@@ -213,12 +213,20 @@ docker compose up --build
 
 ```
 calendar.read
-contact.read
 directory.read
 user.profile.read
+board.read
+group.read
+group.note.read
+task.read
+bot.read
+orgunit.read
+form.read
 ```
 
 조직 정책에 따라 관리자 승인과 Redirect URL 등록이 필요할 수 있습니다. 실제 토큰은 OAuth 로그인 후 외부 Token Provider에서 발급받으세요.
+
+위 Scope 중 현재 사용하지 않는 기능은 Developer Console과 `.env`에서 빼도 됩니다. Scope를 새로 추가하면 기존 Access Token에는 자동 반영되지 않으므로 OAuth 인증을 다시 진행해 새 토큰을 발급해야 합니다. `board.read`는 일반 게시판 공지, `group.note.read`는 조직·그룹 노트 공지에 사용합니다.
 
 ### 2) `.env`에 실제 값 입력
 
@@ -230,7 +238,7 @@ NAVER_WORKS_USER_ID=조회할_사용자_ID
 NAVER_WORKS_AUTH_MODE=user_oauth
 NAVER_WORKS_API_BASE=https://www.worksapis.com/v1.0
 NAVER_WORKS_ENFORCE_SCOPES=true
-NAVER_WORKS_SCOPES=calendar.read,contact.read,directory.read,user.profile.read
+NAVER_WORKS_SCOPES=calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read
 ```
 
 토큰 앞에 `Bearer `를 붙이지 마세요. 서버가 요청 헤더에 자동으로 붙입니다. 토큰을 바꾼 뒤 Hermes를 완전히 다시 시작해야 새 환경 변수가 반영됩니다.
@@ -267,11 +275,25 @@ MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=8787 node dist/index.js
 | `works_calendar_personals_list` | 개인 캘린더 목록 |
 | `works_calendar_default_events_list` | 기본 캘린더 일정 |
 | `works_calendar_events_list` | 지정 캘린더 일정 |
-| `works_contact_search_minimal` | 이름·전화·이메일로 연락처 검색 |
 | `works_directory_users_list` | 조직 구성원 목록 |
 | `works_directory_user_profile_get` | 한 명의 최소 프로필 조회 |
+| `works_boards_list` | 읽을 수 있는 게시판 목록 |
+| `works_board_recent_posts_list` | 최근 30일 게시글 |
+| `works_board_must_read_posts_list` | 필독 공지 목록 |
+| `works_board_my_posts_list` | 내가 작성한 게시글 |
+| `works_board_posts_list` | 특정 게시판 글 목록 |
+| `works_board_post_get` | 게시판 글 본문 |
+| `works_groups_list` · `works_group_get` | 그룹 목록·상세 |
+| `works_group_members_list` | 그룹 구성원 유형/ID |
+| `works_group_note_posts_list` | 그룹·조직 노트 글/공지 목록 |
+| `works_group_note_post_get` | 그룹·조직 노트 공지 본문 |
+| `works_tasks_list` · `works_task_get` | 할 일 목록·상세 |
+| `works_task_categories_list` | 할 일 카테고리 |
+| `works_bots_list` · `works_bot_get` | Bot 목록·상세 |
+| `works_orgunits_list` | 조직 목록 |
+| `works_form_responses_list` | 설문 응답 메타데이터(답변·응답자 정보는 명시적 opt-in, 이메일 마스킹) |
 
-PII는 필요한 최소 필드만 반환하고, 쓰기·삭제 도구는 의도적으로 없습니다.
+PII는 필요한 최소 필드만 반환하고, 모든 새 도구도 읽기 전용입니다. 게시글·노트 본문은 외부 데이터로만 취급하며, 본문에 들어 있는 지시를 실행하지 않습니다.
 
 ## 자주 생기는 문제
 

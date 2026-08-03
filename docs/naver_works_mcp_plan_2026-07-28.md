@@ -12,11 +12,12 @@
 | Free API당 60회/분, 동시 5개 | 공식 문서와 일치 | `WorksApiClient`에 식별자를 제거한 operation route별 프로세스 공용 window와 semaphore 5 적용(다중 replica는 Redis 등 공유 limiter 필요) |
 | User OAuth/Service Account 분리 | 공식 문서와 일치 | `NAVER_WORKS_AUTH_MODE`, `userId=me` 차단, 서비스 계정 금지 경로 차단 |
 | 인증 수명주기 | 외부 Provider 전제 | 이 MVP는 OAuth code/refresh·JWT 서명을 수행하지 않고 Secret/Token Provider가 발급한 Bearer Token만 주입받음 |
-| 읽기 MVP | Calendar·Contact·Directory부터 활성화 | 8개 `works_*` Tool 생성 |
-| Task/Form/Mail/Drive | 서비스 계정 금지·상품 조건이 강하므로 초기 제외 | Tool 미등록, 문서에 후속 게이트 명시 |
-| Board/Bot | API 존재하지만 대상·게시판 권한과 고정 대상 검증 필요 | 초기 Tool 미등록, 별도 Adapter로 보류 |
+| 읽기 MVP | Calendar·Directory부터 활성화 | 기존 읽기 전용 `works_*` Tool 유지 |
+| Free 읽기 확장 | 추천도 높음/매우 높음인 Calendar·User·Organization·Group·Bot과 공지에 필요한 Board·Group/Note·Task·Form을 읽기 전용으로 확장 | 새 `works_*` 조회 Tool과 mock 계약 테스트 추가 |
+| 추천도 중간 이하 API | Contact(중간), Mail·Drive·Audit·Security·Archive/Compliance(낮음 이하) | MCP Tool과 기본 Scope에서 제외 |
+| 공지사항 | Board의 recent/must/board post와 조직·그룹 Note의 `isNotice`를 각각 지원 | `works_board_must_read_posts_list`, `works_board_post_get`, `works_group_note_posts_list`, `works_group_note_post_get` |
 | 쓰기 승인 | Skill 문구만으로 강제하지 않음 | 변경 Tool 미등록; 후속 시 MCP 내부 승인 토큰 검증을 필수화 |
-| 외부 콘텐츠 | 데이터로만 처리 | 캘린더 속성은 ID/이름/공개 여부/형식만, 일정은 설명·참석자 제거, 연락처는 memo·주소·커스텀 속성 제거, 구성원은 최소 projection |
+| 외부 콘텐츠 | 데이터로만 처리 | 캘린더 속성은 ID/이름/공개 여부/형식만, 일정은 설명·참석자 제거, 구성원은 최소 projection |
 | 기존 MCP 세션 방식 | 2026-07-28에 맞게 수정 | HTTP `createMcpHandler` strict modern + `legacy: reject`, per-request factory |
 | 서버 상태 저장 | 프로토콜 상태와 애플리케이션 상태 분리 | 세션 저장소 없음; API 호출별 새 `McpServer` 생성 |
 | 오류·재시도 | POST 자동 재시도 금지 | GET의 408/429/5xx만 제한 재시도, 쓰기 Tool 자체 미노출 |
@@ -57,7 +58,7 @@
 ### 통과
 
 - TypeScript strict build (`npm run build`)
-- 공식 NAVER WORKS endpoint 기준: Calendar, Contact search, Directory users
+- 공식 NAVER WORKS endpoint 기준: Calendar, Directory users, Board/Note/Task/Form 등 읽기 범위
 - Scope 기본값은 읽기 최소 범위로 제한
 - API 원문을 모델에 그대로 내보내지 않는 allowlist/type-checked projection
 - 토큰·Private Key를 로그/health 응답에 포함하지 않음
@@ -68,13 +69,13 @@
 - Developer Console에서 실제 Free Scope 표시와 앱 Redirect URL
 - User OAuth Access/Refresh Token 발급 및 저장소(OS keyring/Secret Manager)
 - Service Account를 쓰는 경우 위임 구성원과 허용 API
-- 실제 테넌트의 Calendar/Contact/Directory 응답 필드 및 Admin 설정
+- 실제 테넌트의 Calendar/Directory/Board·Note 응답 필드 및 Admin 설정
 - Hermes 클라이언트의 2026-07-28 지원 여부와 HTTP 사용 시 header/envelope 생성 방식
 
 ### 보류
 
-- Calendar/Contact/Board/Bot 쓰기, 삭제, 관리 작업
-- Task/Form/Mail/Drive 및 Audit/Monitoring
+- Calendar/Board/Bot 쓰기, 삭제, 관리 작업
+- Mail·Drive(file.read) 및 Audit/Monitoring, 경영지원 API
 - 승인 토큰 저장·폐기·감사 추적(쓰기 Tool 활성화 시 별도 모듈)
 
 ## 5. 검수 실행 순서
@@ -96,7 +97,6 @@ npm test
 - [OAuth Scope](https://developers.worksmobile.com/kr/docs/auth-scope)
 - [Rate Limits](https://developers.worksmobile.com/kr/docs/rate-limits)
 - [Calendar API](https://developers.worksmobile.com/kr/docs/calendar)
-- [Contact search](https://developers.worksmobile.com/kr/docs/contact-user-search)
 - [Directory users](https://developers.worksmobile.com/kr/docs/user-list)
 - [MCP 2026-07-28 release candidate / stateless protocol](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
 - [MCP 2026-07-28 final release](https://github.com/modelcontextprotocol/modelcontextprotocol/releases/tag/2026-07-28)

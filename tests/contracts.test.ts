@@ -2,7 +2,7 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHttpHandler } from "../src/index.js";
 import { loadConfig } from "../src/config.js";
-import { pathSegment, projectCalendarEvents, projectCalendarPersonals, projectCalendarProperties, projectContacts, projectUsers, rateLimitRoute, WorksApiClient } from "../src/works-api.js";
+import { pathSegment, projectCalendarEvents, projectCalendarPersonals, projectCalendarProperties, projectUsers, rateLimitRoute, WorksApiClient } from "../src/works-api.js";
 
 const envelope = {
   "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -32,7 +32,7 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
 
   before(() => {
     process.env.NAVER_WORKS_MOCK = "true";
-    process.env.NAVER_WORKS_SCOPES = "calendar.read,contact.read,directory.read,user.profile.read";
+    process.env.NAVER_WORKS_SCOPES = "calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read";
     process.env.NAVER_WORKS_ENFORCE_SCOPES = "true";
     handler = createHttpHandler();
   });
@@ -51,6 +51,10 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const names = payload.result?.tools?.map((tool) => tool.name) ?? [];
     assert.ok(names.includes("works_health"));
     assert.ok(names.includes("works_calendar_default_events_list"));
+    assert.ok(names.includes("works_board_must_read_posts_list"));
+    assert.ok(names.includes("works_group_note_post_get"));
+    assert.ok(names.includes("works_tasks_list"));
+    assert.ok(names.includes("works_form_responses_list"));
     assert.equal(payload.result?.ttlMs, 30_000);
     assert.equal(payload.result?.cacheScope, "public");
     const usersList = payload.result?.tools?.find((tool) => tool.name === "works_directory_users_list");
@@ -65,15 +69,6 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const text = payload.result?.content?.[0]?.text ?? "";
     assert.match(text, /2026-07-28/);
     assert.match(text, /statelessTransport/);
-  });
-
-  it("projects contact data and masks direct identifiers", async () => {
-    const response = await handler.fetch(request("tools/call", 4, { name: "works_contact_search_minimal", arguments: { query: "홍" } }, "works_contact_search_minimal"));
-    const payload = await response.json() as { result?: { content?: Array<{ text?: string }> } };
-    const text = payload.result?.content?.[0]?.text ?? "";
-    assert.match(text, /h\*\*\*@example\.com/);
-    assert.match(text, /\*\*\*5678/);
-    assert.doesNotMatch(text, /memo/);
   });
 
   it("enforces the 31-day Calendar API window before making a request", async () => {
@@ -94,15 +89,6 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const payload = await response.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
     assert.equal(payload.result?.isError, true);
     assert.match(payload.result?.content?.[0]?.text ?? "", /YYYY-MM-DDThh:mm:ssTZD/);
-  });
-
-  it("rejects unsupported contact query filters", async () => {
-    const response = await handler.fetch(request("tools/call", 18, {
-      name: "works_contact_search_minimal",
-      arguments: { query: "홍", queryFilters: "password" },
-    }, "works_contact_search_minimal"));
-    const payload = await response.json() as { result?: { isError?: boolean } };
-    assert.equal(payload.result?.isError, true);
   });
 
   it("blocks userId=me for Service Account mode", async () => {
@@ -135,7 +121,6 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
 
   it("fails closed when an upstream projection payload is not an object", () => {
     assert.deepEqual(projectCalendarEvents("unexpected"), { events: [] });
-    assert.deepEqual(projectContacts(null), { contacts: [] });
     assert.deepEqual(projectUsers(42), { users: [] });
   });
 
@@ -188,6 +173,38 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const text = payload.result?.content?.[0]?.text ?? "";
     assert.match(text, /mock-user/);
     assert.match(text, /사용자/);
+  });
+
+  it("reads a mock board announcement list and body", async () => {
+    const list = await handler.fetch(request("tools/call", 23, { name: "works_board_must_read_posts_list", arguments: {} }, "works_board_must_read_posts_list"));
+    const listPayload = await list.json() as { result?: { content?: Array<{ text?: string }> } };
+    assert.match(listPayload.result?.content?.[0]?.text ?? "", /MCP mock/);
+    const body = await handler.fetch(request("tools/call", 24, { name: "works_board_post_get", arguments: { boardId: 100, postId: 1 } }, "works_board_post_get"));
+    const bodyPayload = await body.json() as { result?: { content?: Array<{ text?: string }> } };
+    assert.match(bodyPayload.result?.content?.[0]?.text ?? "", /모의 공지 본문/);
+  });
+
+  it("reads mock group-note notices, tasks, bots, org units, and forms", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [
+      ["works_group_note_posts_list", { groupId: "mock-group" }],
+      ["works_tasks_list", { categoryId: "default", userId: "mock-user" }],
+      ["works_task_get", { taskId: "mock-task" }],
+      ["works_bots_list", {}],
+      ["works_orgunits_list", {}],
+      ["works_form_responses_list", { formId: "mock-form" }],
+    ];
+    for (const [name, arguments_] of calls) {
+      const response = await handler.fetch(request("tools/call", 25, { name, arguments: arguments_ }, name));
+      const payload = await response.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+      assert.notEqual(payload.result?.isError, true, name);
+      assert.ok(payload.result?.content?.[0]?.text, name);
+    }
+    const formDefault = await handler.fetch(request("tools/call", 26, { name: "works_form_responses_list", arguments: { formId: "mock-form" } }, "works_form_responses_list"));
+    const formDefaultPayload = await formDefault.json() as { result?: { content?: Array<{ text?: string }> } };
+    assert.doesNotMatch(formDefaultPayload.result?.content?.[0]?.text ?? "", /모의 응답/);
+    const formOptIn = await handler.fetch(request("tools/call", 27, { name: "works_form_responses_list", arguments: { formId: "mock-form", includeAnswers: true, includeRespondent: true } }, "works_form_responses_list"));
+    const formOptInPayload = await formOptIn.json() as { result?: { content?: Array<{ text?: string }> } };
+    assert.match(formOptInPayload.result?.content?.[0]?.text ?? "", /모의 응답/);
   });
 
   it("blocks Service Account task-category paths", async () => {
