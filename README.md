@@ -28,32 +28,32 @@ OAuth 로그인·Refresh Token 갱신·Service Account JWT 서명은 이 저장�
 
 이미 이 폴더가 있다면 이 단계는 건너뛰세요.
 
-`@powershell
+```powershell
 git clone https://github.com/QriumJ/NAVER_WORKS_MCP.git
 Set-Location NAVER_WORKS_MCP
-`
+```
 
 ### 2) 설치하고 설정 파일 만들기
 
-`@powershell
+```powershell
 npm install
 Copy-Item .env.example .env
-`
+```
 
 `.env`를 메모장으로 열어 먼저 **연습 모드**로 확인합니다.
 
-`@dotenv
+```dotenv
 MCP_TRANSPORT=stdio
 NAVER_WORKS_MOCK=true
 NAVER_WORKS_USER_ID=mock-user
-`
+```
 
 ### 3) 빌드와 테스트
 
-`@powershell
+```powershell
 npm run build
 npm test
-`
+```
 
 `22 passing`이 나오면 프로그램 자체는 정상입니다.
 
@@ -61,7 +61,7 @@ npm test
 
 Hermes의 `MCP 서버 추가` 화면에서 전송 방식은 `stdio`를 선택하고, 아래 값을 넣습니다. Hermes 버전에 따라 항목 이름이 `command`, `args`, `env` 또는 `실행 파일`, `인자`, `환경 변수`로 보일 수 있습니다.
 
-`@json
+```json
 {
   "name": "naver-works",
   "command": "node",
@@ -72,7 +72,7 @@ Hermes의 `MCP 서버 추가` 화면에서 전송 방식은 `stdio`를 선택하
     "NAVER_WORKS_USER_ID": "mock-user"
   }
 }
-`
+```
 
 `args`의 경로는 실제 폴더에 맞게 바꾸세요. 프로젝트가 다른 폴더에 있다면 `dist\index.js`의 전체 경로를 넣습니다. Hermes에 `cwd`(작업 폴더) 항목이 있다면 이 프로젝트 폴더를 지정하면 `.env`도 자동으로 읽습니다.
 
@@ -80,9 +80,9 @@ Hermes의 `MCP 서버 추가` 화면에서 전송 방식은 `stdio`를 선택하
 
 서버를 저장하고 Hermes 채팅에서 다음처럼 말해 보세요.
 
-`
+```
 NAVER WORKS에서 내 프로필을 조회해 줘.
-`
+```
 
 연습 모드에서는 `mock-user`가 반환됩니다. 응답이 오면 Hermes ↔ MCP 연결은 끝난 것입니다.
 
@@ -92,18 +92,18 @@ NAVER WORKS에서 내 프로필을 조회해 줘.
 
 앱의 사용자 OAuth 권한에 다음 읽기 Scope를 요청합니다.
 
-`
+```
 calendar.read
 contact.read
 directory.read
 user.profile.read
-`
+```
 
 조직 정책에 따라 관리자 승인과 Redirect URL 등록이 필요할 수 있습니다. 실제 토큰은 OAuth 로그인 후 외부 Token Provider에서 발급받으세요.
 
 ### 2) `.env`에 실제 값 입력
 
-`@dotenv
+```dotenv
 MCP_TRANSPORT=stdio
 NAVER_WORKS_MOCK=false
 NAVER_WORKS_ACCESS_TOKEN=여기에_짧은_수명의_Bearer_토큰
@@ -112,7 +112,7 @@ NAVER_WORKS_AUTH_MODE=user_oauth
 NAVER_WORKS_API_BASE=https://www.worksapis.com/v1.0
 NAVER_WORKS_ENFORCE_SCOPES=true
 NAVER_WORKS_SCOPES=calendar.read,contact.read,directory.read,user.profile.read
-`
+```
 
 토큰 앞에 `Bearer `를 붙이지 마세요. 서버가 요청 헤더에 자동으로 붙입니다. 토큰을 바꾼 뒤 Hermes를 완전히 다시 시작해야 새 환경 변수가 반영됩니다.
 
@@ -120,13 +120,13 @@ NAVER_WORKS_SCOPES=calendar.read,contact.read,directory.read,user.profile.read
 
 대부분의 개인 사용자는 stdio를 권장합니다. 다른 컴퓨터나 원격 Hermes가 연결해야 할 때만 HTTP를 사용하세요.
 
-`@powershell
+```powershell
 npm run build
 $env:MCP_TRANSPORT="http"
 $env:MCP_HOST="127.0.0.1"
 $env:MCP_PORT="8787"
 node dist/index.js
-`
+```
 
 정상 실행 후 `http://127.0.0.1:8787/healthz`에서 상태를 확인할 수 있습니다. HTTP `/mcp`는 MCP `2026-07-28` strict stateless envelope와 표준 헤더를 요구합니다. 원격 바인딩은 32자 이상의 `MCP_SHARED_SECRET`, 허용 Host 목록, TLS reverse proxy가 모두 필요합니다. 공유 시크릿 없이 인터넷에 공개하지 마세요.
 
@@ -159,11 +159,11 @@ PII는 필요한 최소 필드만 반환하고, 쓰기·삭제 도구는 의도�
 
 ## 검수 및 문서
 
-`@powershell
+```powershell
 npm run build
 npm test
 npm audit --omit=dev
-`
+```
 
 현재 검수 결과는 **98/100**, P0/P1 결함 없음입니다. 남은 항목은 포트 문자열의 더 엄격한 파싱, 실테넌트 권한 검증, 실제 Hermes 클라이언트의 2026-07-28 지원 확인 같은 운영 단계입니다.
 
