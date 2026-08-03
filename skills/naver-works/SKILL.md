@@ -11,12 +11,13 @@ description: NAVER WORKS 읽기 업무를 MCP 도구로 안전하게 수행하�
 
 사용자가 Hermes 채팅으로 설치를 요청하면 아래 순서를 따른다.
 
-1. 터미널 실행 권한이 있는지 먼저 확인한다. 권한이 없으면 명령을 출력만 하고 사용자가 직접 실행하도록 안내한다.
-2. Node.js 20.11 이상, npm, Git을 확인한다. 저장소가 없을 때만 `git clone --branch codex/naver-works-mcp https://github.com/QriumJ/NAVER_WORKS_MCP.git NAVER_WORKS_MCP`를 실행한다. 이미 저장소가 있으면 삭제·덮어쓰기 전에 상태와 브랜치를 보고한다.
-3. `npm install` → `npm run build` → `NAVER_WORKS_MOCK=true npm test` 순서로 설치와 mock 계약 검사를 수행한다.
-4. Hermes 등록은 로컬 `stdio`를 기본으로 하고 `command=node`, `args=dist/index.js` 절대 경로를 사용한다. HTTP는 사용자가 명시적으로 요청하고 TLS·Host/Origin·공유 시크릿 조건을 갖춘 경우에만 안내한다.
-5. 설치 과정에서 Access Token, 비밀번호, 개인정보를 요구하거나 출력하지 않는다. 실제 OAuth 연결은 사용자가 토큰 준비를 명시한 뒤에만 진행하며, 토큰은 환경 변수 또는 Secret Manager에만 저장한다.
-6. 완료 후 `NAVER WORKS에서 내 프로필을 조회해 줘.`라는 mock 확인 문장을 안내하고, 실패 시 실행한 단계·오류·다음 명령만 보고한다.
+1. 운영체제가 Windows인지 Ubuntu/Linux인지, Hermes가 Docker 안인지, 터미널·파일 실행 권한이 있는지 먼저 확인한다. 권한이 없으면 명령을 출력만 하고 사용자가 직접 실행하도록 안내한다.
+2. Node.js 20.11 이상, npm, Git을 확인한다. Docker라면 Node.js 22 이상 이미지를 사용한다. 저장소가 없을 때만 `git clone https://github.com/QriumJ/NAVER_WORKS_MCP.git NAVER_WORKS_MCP`를 실행한다. 이미 저장소가 있으면 삭제·덮어쓰기 전에 상태와 브랜치를 보고한다.
+3. 로컬은 `npm install` → `npm run build` → `NAVER_WORKS_MOCK=true npm test`, Docker는 `Dockerfile` 또는 `compose.yaml`로 설치와 mock 계약 검사를 수행한다.
+4. Hermes와 MCP가 같은 환경이면 `stdio`를 기본으로 하고 `command=node`, `args=dist/index.js` 운영체제별 절대 경로를 사용한다. 서로 다른 컨테이너면 `http://naver-works-mcp:8787/mcp`와 Compose 서비스 이름을 사용한다.
+5. Docker HTTP는 `MCP_HOST=0.0.0.0`, 32자 이상 `MCP_SHARED_SECRET`, `MCP_ALLOWED_HOSTS`의 실제 서비스 이름을 요구한다. 외부 공개는 TLS reverse proxy 뒤에서만 허용한다.
+6. 설치 과정에서 Access Token, 비밀번호, 개인정보를 요구하거나 출력하지 않는다. 실제 OAuth 연결은 사용자가 토큰 준비를 명시한 뒤에만 진행하며, 토큰은 환경 변수 또는 Secret Manager에만 저장한다.
+7. 완료 후 `NAVER WORKS에서 내 프로필을 조회해 줘.`라는 mock 확인 문장을 안내하고, 실패 시 실행한 단계·오류·다음 명령만 보고한다.
 
 ## 읽기 흐름
 
