@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NAVER WORKS MCP 2026-07-28 검수본</title>
+  <style>
+    :root{--bg:#f5f7fb;--card:#fff;--ink:#16202a;--muted:#5b6b7a;--line:#dce4ed;--blue:#155eef;--green:#087f5b;--amber:#9a5b00;--red:#b42318}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:0 22px}.hero{padding:64px 0 42px;background:linear-gradient(135deg,#eaf2ff,#fff 62%,#f4edff);border-bottom:1px solid var(--line)}.eyebrow{color:var(--blue);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.hero h1{font-size:clamp(34px,6vw,64px);line-height:1.05;letter-spacing:-.05em;margin:14px 0}.hero p{max-width:760px;color:#3e4f5f;font-size:18px}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.pill{border:1px solid #cad8eb;border-radius:999px;background:#fff;padding:5px 10px;font-size:12px;font-weight:700;color:#405365}.section{background:var(--card);border:1px solid var(--line);border-radius:16px;margin:22px 0;padding:28px;box-shadow:0 12px 30px #102a4810}.section h2{margin:0 0 8px;font-size:24px}.section h3{margin:24px 0 6px;font-size:18px}.callout{border:1px solid #c1d6fa;background:#edf4ff;border-radius:12px;padding:14px 16px;margin:14px 0}.callout.green{border-color:#b6e3d3;background:#eaf8f2}.callout.amber{border-color:#efd498;background:#fff6df}.callout.red{border-color:#f0beb7;background:#fff0ee}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{border:1px solid var(--line);border-radius:12px;padding:15px;background:#fbfcfe}.card b{display:block;margin-bottom:3px}.status{font-weight:800}.ok{color:var(--green)}.warn{color:var(--amber)}.block{color:var(--red)}table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}th,td{text-align:left;vertical-align:top;padding:11px;border-bottom:1px solid var(--line)}th{background:#f1f4f8;font-size:12px;color:#4c6072}code{font:600 13px ui-monospace,SFMono-Regular,Consolas,monospace;background:#eef2f7;border:1px solid #e0e7ef;border-radius:5px;padding:2px 5px}a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}.small{font-size:13px;color:var(--muted)}ul{padding-left:22px}.footer{padding:10px 0 55px;color:var(--muted);font-size:13px}@media(max-width:720px){.grid{grid-template-columns:1fr}.section{padding:20px}.hero{padding-top:42px}table{font-size:13px}}
+  </style>
+</head>
+<body>
+  <header class="hero"><div class="wrap">
+    <div class="eyebrow">Review-gated · official API first · stateless MCP</div>
+    <h1>NAVER WORKS MCP<br>2026-07-28 적용 검수본</h1>
+    <p><b>결론:</b> 첨부 기획의 MCP + Skill 분리는 유지하되, 실제 생성물은 읽기 MVP로 제한했습니다. HTTP는 MCP 2026-07-28 strict stateless로 만들고, 쓰기·관리 기능은 테넌트·상품·승인 검증 뒤 별도 추가합니다.</p>
+    <div class="meta"><span class="pill">기준 첨부: naver_works_free_mcp_plan.html</span><span class="pill">프로토콜: 2026-07-28</span><span class="pill">현재: mock 계약 검수 통과</span></div>
+  </div></header>
+  <main class="wrap">
+    <section class="section"><h2>01 · 기획 수정 판정</h2>
+      <div class="callout green"><span class="status ok">권장</span> MCP는 인증·Scope·Rate Limit·PII projection·대상 경계를 강제하고, Skill은 자연어 업무 흐름과 결과 보고만 담당합니다.</div>
+      <table><thead><tr><th>구분</th><th>결정</th><th>생성물</th></tr></thead><tbody>
+        <tr><td>읽기 MVP</td><td class="status ok">활성</td><td>Calendar(속성·일정)·Contact·Directory 최소 필드</td></tr>
+        <tr><td>변경·삭제</td><td class="status warn">보류</td><td>승인 토큰을 MCP 내부에서 검증하는 별도 모듈</td></tr>
+        <tr><td>Task/Form/Mail/Drive</td><td class="status block">초기 제외</td><td>서비스 계정 금지·상품 조건 때문에 Tool 미등록</td></tr>
+        <tr><td>Board/Bot/Audit/Monitoring</td><td class="status warn">테넌트 확인 후</td><td>고정 대상·상품·Scope·관리자 조건 확인 뒤 Adapter</td></tr>
+      </tbody></table>
+    </section>
+    <section class="section"><h2>02 · MCP 2026-07-28 적용</h2>
+      <div class="grid"><div class="card"><b>무상태 HTTP</b><span class="small">`initialize`와 `Mcp-Session-Id`를 사용하지 않고 요청별 `_meta.io.modelcontextprotocol` envelope를 요구합니다.</span></div><div class="card"><b>라우팅·캐시</b><span class="small">SDK가 `Mcp-Method`·`Mcp-Name`을 교차 검증하고 `server/discover`·`tools/list`에 cache hint를 붙입니다.</span></div><div class="card"><b>수평 확장</b><span class="small">per-request factory로 프로토콜 세션 저장소가 필요하지 않으며, Free 레이트리밋은 프로세스 공용 limiter로 보호합니다(다중 replica는 공유 limiter 필요).</span></div><div class="card"><b>호환성</b><span class="small">HTTP는 strict modern, stdio는 구형 클라이언트를 위해 `legacy: serve`를 선택적으로 지원합니다.</span></div></div>
+    </section>
+    <section class="section"><h2>03 · 생성된 구성</h2>
+      <ul><li><code>src/config.ts</code> — 환경 변수·인증 모드·Scope·Host/Origin allowlist</li><li><code>src/works-api.ts</code> — NAVER WORKS API·Free 제한·정규화된 rate bucket·GET 재시도·PII projection·mock</li><li><code>src/server.ts</code> — 8개 read-only <code>works_*</code> Tool</li><li><code>src/index.ts</code> — stdio와 strict stateless HTTP <code>/mcp</code></li><li><code>skills/naver-works/SKILL.md</code> — 자연어 읽기 업무와 변경 승인 경계</li></ul>
+      <div class="callout">실행: <code>npm install</code> → <code>npm run build</code> → `.env` 설정 → <code>npm start</code>. 자격증명 없는 계약 검수는 <code>NAVER_WORKS_MOCK=true npm test</code>입니다.</div>
+    </section>
+    <section class="section"><h2>04 · 검수 결과</h2>
+      <div class="grid"><div class="card"><b class="status ok">통과</b><span class="small">TypeScript build, modern tools/list·tools/call, 세션 ID 미발급, cache fields, 캘린더/연락처/구성원 allowlist projection, PII 마스킹, 31일 일정 범위, 구형 initialize 차단, 요청·응답 크기/시간 제한.</span></div><div class="card"><b class="status warn">사용자 확인</b><span class="small">Developer Console Free Scope·Redirect URL, 외부 Token Provider와 Secret 저장소, Service Account 위임, 실제 테넌트 응답, Hermes의 2026-07-28 지원.</span></div></div>
+      <div class="callout red"><b>실계정 미실행:</b> 앱 등록·OAuth 동의·토큰 발급·실제 NAVER WORKS API 호출은 외부 권한이 필요하므로 이번 검수에서 수행하지 않았습니다. 이 MVP는 외부 Secret/Token Provider가 발급한 Bearer Token을 주입받으며 OAuth refresh/JWT 서명은 포함하지 않습니다.</div>
+    </section>
+    <section class="section"><h2>05 · 문서·출처</h2>
+      <p><a href="./naver_works_mcp_plan_2026-07-28.md">상세 수정·검수 기록(Markdown)</a> · <a href="https://developers.worksmobile.com/kr/docs/api">NAVER WORKS API</a> · <a href="https://developers.worksmobile.com/kr/docs/rate-limits">Rate Limits</a> · <a href="https://github.com/modelcontextprotocol/modelcontextprotocol/releases/tag/2026-07-28">MCP 2026-07-28 최종 릴리스</a> · <a href="https://we0.ai/ko/articles/mcp-2026-07-28-explained-stateless">We0.ai 무상태 설명</a> · <a href="https://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/">MCP 2025-11-25 배경</a></p>
+    </section>
+    <div class="footer">첨부 HTML의 기존 “완료된 다중 에이전트 검수” 표기는 재현 로그가 없어 증거로 승계하지 않았습니다. 이 검수본은 현재 작업공간에서 생성·실행된 파일과 mock 계약 테스트를 기준으로 합니다.</div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,104 @@
+# NAVER WORKS MCP 기획 수정·생성·검수본
+
+기준 문서: `C:\Users\Home\Downloads\Telegram Desktop\naver_works_free_mcp_plan.html`  
+기준일: 2026-08-03  
+결정: NAVER WORKS 읽기 MVP를 MCP `2026-07-28` 무상태 서버로 먼저 생성하고, 쓰기·관리 작업은 테넌트 검증과 별도 승인 뒤 추가한다.
+
+## 1. 기획 수정 판정
+
+| 기존 기획 항목 | 수정 판정 | 구현 반영 |
+| --- | --- | --- |
+| MCP + Skill 계층 분리 | 유지 | `skills/naver-works/SKILL.md`에 읽기 흐름과 변경 승인 원칙을 분리 |
+| Free API당 60회/분, 동시 5개 | 공식 문서와 일치 | `WorksApiClient`에 식별자를 제거한 operation route별 프로세스 공용 window와 semaphore 5 적용(다중 replica는 Redis 등 공유 limiter 필요) |
+| User OAuth/Service Account 분리 | 공식 문서와 일치 | `NAVER_WORKS_AUTH_MODE`, `userId=me` 차단, 서비스 계정 금지 경로 차단 |
+| 인증 수명주기 | 외부 Provider 전제 | 이 MVP는 OAuth code/refresh·JWT 서명을 수행하지 않고 Secret/Token Provider가 발급한 Bearer Token만 주입받음 |
+| 읽기 MVP | Calendar·Contact·Directory부터 활성화 | 8개 `works_*` Tool 생성 |
+| Task/Form/Mail/Drive | 서비스 계정 금지·상품 조건이 강하므로 초기 제외 | Tool 미등록, 문서에 후속 게이트 명시 |
+| Board/Bot | API 존재하지만 대상·게시판 권한과 고정 대상 검증 필요 | 초기 Tool 미등록, 별도 Adapter로 보류 |
+| 쓰기 승인 | Skill 문구만으로 강제하지 않음 | 변경 Tool 미등록; 후속 시 MCP 내부 승인 토큰 검증을 필수화 |
+| 외부 콘텐츠 | 데이터로만 처리 | 캘린더 속성은 ID/이름/공개 여부/형식만, 일정은 설명·참석자 제거, 연락처는 memo·주소·커스텀 속성 제거, 구성원은 최소 projection |
+| 기존 MCP 세션 방식 | 2026-07-28에 맞게 수정 | HTTP `createMcpHandler` strict modern + `legacy: reject`, per-request factory |
+| 서버 상태 저장 | 프로토콜 상태와 애플리케이션 상태 분리 | 세션 저장소 없음; API 호출별 새 `McpServer` 생성 |
+| 오류·재시도 | POST 자동 재시도 금지 | GET의 408/429/5xx만 제한 재시도, 쓰기 Tool 자체 미노출 |
+| 입출력 상한 | DoS 경계 추가 | HTTP 요청 1 MiB·15초, 상류 응답 2 MiB, 413/408 처리 |
+
+## 2. MCP 2026-07-28 적용 체크
+
+- [x] `MCP-Protocol-Version: 2026-07-28`을 현대 HTTP 요청의 기준으로 사용
+- [x] `initialize` 및 `Mcp-Session-Id`를 HTTP 경로에서 사용하지 않음
+- [x] 요청 `params._meta`에 `io.modelcontextprotocol/protocolVersion`, `io.modelcontextprotocol/clientCapabilities`를 요구
+- [x] `server/discover`와 `tools/list`/`tools/call`은 SDK가 처리
+- [x] `Mcp-Method` 헤더 검증은 SDK에 위임; `Mcp-Name`은 tools/call의 Tool 이름과 교차 검증
+- [x] `server/discover`/`tools/list`에 2026-07-28 cache hint(`ttlMs`, `cacheScope`)를 설정
+- [x] per-request factory로 수평 확장 시 서버 인스턴스 간 세션 고정이 없음
+- [x] 구형 클라이언트는 stdio에서만 `legacy: serve`로 호환. HTTP endpoint는 혼용을 막기 위해 strict
+- [x] deprecated Roots/Sampling/Logging을 새 코드에서 사용하지 않음
+- [x] 외부 HTTP 바인딩은 공유 시크릿과 명시적 Host/Origin allowlist 없이는 설정 오류
+- [x] 비-mock API Base는 HTTPS만 허용하고 shared secret 비교는 constant-time
+
+## 3. 생성물
+
+- `src/config.ts`: 환경 변수, 인증 모드, Scope 정책, Host/Origin allowlist, 공개 상태 projection
+- `src/works-api.ts`: NAVER WORKS API 클라이언트, Bearer 토큰, Free 제한, GET 재시도, PII projection, mock fixture
+- `src/server.ts`: typed `works_*` read-only Tool 등록
+- `src/index.ts`: stdio 및 strict stateless Streamable HTTP `/mcp`, `/healthz`
+- `skills/naver-works/SKILL.md`: 자연어 업무 계층, 데이터/지시문 경계, 변경 승인 원칙
+- `.env.example`, `README.md`: 설치·실행·Hermes 연결 기준
+
+## 4. 검수 결과
+
+### 원본 첨부파일에 대한 검증 경계
+
+- 원본 HTML의 “Mini-GPT 4관점”, “Sol 1·2차 PASS_WITH_WARNING” 표기는 이 작업공간에 검수 로그나 재현 가능한 보고서가 없으므로 사실 증거로 승계하지 않았다.
+- 원본의 기준 SHA 저장소는 이 작업공간에 clone되어 있지 않아 저장소 구현 여부·라이선스·의존성은 재검증하지 않았다. 이번 생성물은 해당 저장소를 런타임 의존성으로 사용하지 않는다.
+- 실제 Developer Console·OAuth 동의·Access Token·테넌트 API 호출은 외부 계정 권한과 사용자 승인이 필요하므로 이번 검수 범위 밖이다.
+- OAuth Authorization Code/Refresh Token과 Service Account JWT 발급은 이 저장소의 책임 범위가 아니며, 외부 Secret/Token Provider 연동을 전제로 한다.
+
+### 통과
+
+- TypeScript strict build (`npm run build`)
+- 공식 NAVER WORKS endpoint 기준: Calendar, Contact search, Directory users
+- Scope 기본값은 읽기 최소 범위로 제한
+- API 원문을 모델에 그대로 내보내지 않는 allowlist/type-checked projection
+- 토큰·Private Key를 로그/health 응답에 포함하지 않음
+- mock 모드로 자격증명 없이 계약 테스트 가능
+
+### 사용자/테넌트 확인 필요
+
+- Developer Console에서 실제 Free Scope 표시와 앱 Redirect URL
+- User OAuth Access/Refresh Token 발급 및 저장소(OS keyring/Secret Manager)
+- Service Account를 쓰는 경우 위임 구성원과 허용 API
+- 실제 테넌트의 Calendar/Contact/Directory 응답 필드 및 Admin 설정
+- Hermes 클라이언트의 2026-07-28 지원 여부와 HTTP 사용 시 header/envelope 생성 방식
+
+### 보류
+
+- Calendar/Contact/Board/Bot 쓰기, 삭제, 관리 작업
+- Task/Form/Mail/Drive 및 Audit/Monitoring
+- 승인 토큰 저장·폐기·감사 추적(쓰기 Tool 활성화 시 별도 모듈)
+
+## 5. 검수 실행 순서
+
+```powershell
+npm install
+npm run build
+$env:NAVER_WORKS_MOCK="true"
+npm test
+```
+
+실계정 검증은 `.env`에 Token을 넣기 전에 Developer Console Scope와 테넌트 조건을 이 문서의 표에 기록한 뒤 수행한다. 실계정 호출은 읽기 Tool 하나씩, 31일보다 짧은 기간, 마스킹 결과 확인 순서로 진행한다.
+
+## 6. 출처
+
+- [NAVER WORKS API 개요](https://developers.worksmobile.com/kr/docs/api)
+- [User OAuth](https://developers.worksmobile.com/kr/docs/auth-oauth)
+- [Service Account JWT](https://developers.worksmobile.com/kr/docs/auth-jwt)
+- [OAuth Scope](https://developers.worksmobile.com/kr/docs/auth-scope)
+- [Rate Limits](https://developers.worksmobile.com/kr/docs/rate-limits)
+- [Calendar API](https://developers.worksmobile.com/kr/docs/calendar)
+- [Contact search](https://developers.worksmobile.com/kr/docs/contact-user-search)
+- [Directory users](https://developers.worksmobile.com/kr/docs/user-list)
+- [MCP 2026-07-28 release candidate / stateless protocol](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
+- [MCP 2026-07-28 final release](https://github.com/modelcontextprotocol/modelcontextprotocol/releases/tag/2026-07-28)
+- [MCP 2025-11-25 anniversary release context](https://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/)
+- [We0.ai 2026-07-28 stateless 설명](https://we0.ai/ko/articles/mcp-2026-07-28-explained-stateless)
