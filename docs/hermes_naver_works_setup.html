@@ -196,8 +196,9 @@ npm test</code></pre>
         <li><b>Redirect URL</b>에 아래 주소를 정확히 등록합니다. 주소가 한 글자라도 다르면 인증이 실패합니다.<br><code>http://127.0.0.1:8788/callback</code><br><span class="small">Cloudflare Tunnel 등 외부 주소를 쓸 때는 그 주소의 <code>/callback</code>을 등록하고 실행할 때도 같은 주소를 사용합니다.</span></li>
         <li><b>OAuth Scopes</b>에서 먼저 API 문서와 요금제에 표시된 사용 가능 Scope를 확인합니다. 그다음 1차 연결은 확인된 읽기 Scope로 검증합니다.
           <pre><code>calendar.read
-directory.read
-user.profile.read
+ directory.read
+ contact.read
+ user.profile.read
 board.read
 group.read
 group.note.read
@@ -214,6 +215,7 @@ form.read</code></pre>
         <tbody>
           <tr><td>일정·게시판</td><td><code>calendar.read</code><br><code>board.read</code></td><td><code>calendar</code><br><code>board</code></td></tr>
           <tr><td>그룹·노트·조직·구성원</td><td><code>group.read</code><br><code>group.note.read</code><br><code>orgunit.read</code><br><code>directory.read</code><br><code>user.read</code></td><td><code>group</code><br><code>group.note</code><br><code>orgunit</code><br><code>directory</code><br><code>user</code></td></tr>
+          <tr><td>주소록</td><td><code>contact.read</code></td><td><code>contact</code><br><span class="small">현재 MCP는 읽기 Tool만 등록</span></td></tr>
           <tr><td>할 일·Bot·설문</td><td><code>task.read</code><br><code>bot.read</code><br><code>form.read</code></td><td><code>task</code><br><code>bot</code><br><code>form</code><br><span class="small">Bot 메시지는 API 문서에서 <code>bot.message</code> 확인</span></td></tr>
         </tbody>
       </table>
@@ -226,12 +228,22 @@ form.read</code></pre>
           <tr><td class="status ok">사용 가능</td><td>일정·게시판</td><td><code>calendar.read</code><br><code>board.read</code></td><td><code>calendar</code><br><code>board</code><br><span class="small">기본은 읽기, 6-1-3에서 쓰기 승인</span></td></tr>
           <tr><td class="status ok">사용 가능</td><td>그룹·노트·조직·구성원</td><td><code>group.read</code><br><code>group.note.read</code><br><code>orgunit.read</code><br><code>directory.read</code><br><code>user.profile.read</code></td><td><code>group</code><br><code>group.note</code><br><code>orgunit</code><br><code>directory</code><br><code>user</code><br><span class="small">기본은 읽기, 쓰기는 등록된 Tool만</span></td></tr>
           <tr><td class="status ok">사용 가능</td><td>할 일·Bot·설문</td><td><code>task.read</code><br><code>bot.read</code><br><code>form.read</code></td><td><code>task</code><br><code>bot</code><br><code>form</code><br><span class="small">Bot 메시지는 <code>bot.message</code> 별도 확인</span></td></tr>
-          <tr><td class="status block">현재 MCP에서 제외</td><td>주소록</td><td><code>contact.read</code></td><td><code>contact</code></td></tr>
+          <tr><td class="status ok">사용 가능</td><td>주소록 (연락처 목록·상세)</td><td><code>contact.read</code></td><td><code>contact</code><br><span class="small">현재 MCP는 생성·수정·삭제 Tool을 등록하지 않음</span></td></tr>
           <tr><td class="status block">현재 MCP에서 제외</td><td>그룹 폴더·외부 브라우저</td><td><code>group.folder.read</code><br><code>security.external-browser.read</code></td><td><code>group.folder</code><br><code>security.external-browser</code></td></tr>
           <tr><td class="status block">현재 MCP에서 제외</td><td>드라이브·메일·감사</td><td><code>file.read</code><br><code>mail.read</code><br><code>audit.read</code></td><td><code>file</code><br><code>mail</code><br><code>audit</code></td></tr>
         </tbody>
       </table>
       <div class="callout red"><b>핵심:</b> “사용 불가”는 Client ID에서 Scope를 선택할 수 없다는 뜻이 아니라, 현재 MCP에 해당 API를 호출하는 Tool이 등록되어 있지 않다는 뜻입니다. Scope를 추가해도 Tool은 자동으로 생기지 않습니다.</div>
+      <p><b>주소록에서 사용할 Tool</b></p>
+      <table>
+        <thead><tr><th>Tool</th><th>무엇을 하나요?</th><th>필요 Scope</th></tr></thead>
+        <tbody>
+          <tr><td><code>works_contacts_list</code></td><td>접근 가능한 주소록 전체 목록을 조회합니다.</td><td><code>contact.read</code></td></tr>
+          <tr><td><code>works_user_contacts_list</code></td><td>특정 구성원이 접근 가능한 주소록을 조회합니다.</td><td><code>contact.read</code></td></tr>
+          <tr><td><code>works_contact_get</code></td><td><code>contactId</code> 하나의 상세 정보를 조회합니다.</td><td><code>contact.read</code></td></tr>
+        </tbody>
+      </table>
+      <p class="small">개인정보 보호를 위해 MCP는 대표 이메일을 일부 마스킹하고, 연락처 메모·태그·커스텀 속성은 반환하지 않습니다. 주소록 생성·수정·삭제 Tool은 현재 등록하지 않았습니다.</p>
       <h3>6-1-3. 쓰기 Tool 켜기·승인·끄기</h3>
       <p>쓰기 기능은 기본적으로 꺼져 있어 <code>tools/list</code>에도 나타나지 않습니다. 먼저 Developer Console에서 해당 일반 Scope를 새로 승인하고 Access Token을 다시 발급한 뒤, MCP 프로세스의 환경변수에서 쓰기 기능을 켭니다. 삭제는 한 단계 더 별도 스위치가 필요합니다.</p>
       <pre><code># 공통: .env 또는 Hermes env에 설정
@@ -240,7 +252,7 @@ NAVER_WORKS_WRITE_ENABLED=true
 NAVER_WORKS_DELETE_ENABLED=false
 
 # 필요한 일반 Scope를 read Scope와 함께 지정
-NAVER_WORKS_SCOPES=calendar,board,group.note,task,bot.message,bot,calendar.read,board.read,group.note.read,task.read,bot.read,directory.read,user.profile.read
+NAVER_WORKS_SCOPES=calendar,board,group.note,task,bot.message,bot,calendar.read,board.read,group.note.read,task.read,bot.read,directory.read,contact.read,user.profile.read
 
 # 빌드 후 MCP/Hermes를 완전히 재시작
 npm run build</code></pre>
@@ -255,7 +267,7 @@ npm run build</code></pre>
           <tr><td><code>works_bot_user_message_send</code></td><td>Bot 텍스트 메시지 전송</td><td><code>bot.message</code> + <code>bot</code></td><td>OFF</td></tr>
         </tbody>
       </table>
-      <p class="small">현재 구현하지 않은 일반 Scope(예: contact, file, mail, audit, group.folder, security.external-browser)는 Scope를 선택해도 Tool이 생기지 않습니다. API 권한과 MCP Tool 등록은 별개입니다.</p>
+      <p class="small">현재 구현하지 않은 일반 Scope(예: file, mail, audit, group.folder, security.external-browser)는 Scope를 선택해도 Tool이 생기지 않습니다. 주소록은 <code>contact.read</code> 목록·상세 조회만 지원하며 Contact 생성·수정·삭제는 등록하지 않았습니다. API 권한과 MCP Tool 등록은 별개입니다.</p>
       <h3>6-2. 콜백 서버를 켜고 NAVER WORKS 로그인</h3>
       <p>프로젝트 폴더에서 새 터미널을 열고 <b>Client ID만</b> 넣어 콜백 서버를 실행합니다. Client Secret은 이 단계에서 요구하지 않습니다.</p>
       <pre><code>Windows PowerShell
@@ -314,7 +326,7 @@ NAVER_WORKS_API_BASE=https://www.worksapis.com/v1.0
 NAVER_WORKS_ENFORCE_SCOPES=true
 NAVER_WORKS_WRITE_ENABLED=false
 NAVER_WORKS_DELETE_ENABLED=false
-NAVER_WORKS_SCOPES=calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read</code></pre>
+NAVER_WORKS_SCOPES=calendar.read,directory.read,contact.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read</code></pre>
       <p>Hermes의 MCP 호스트 설정에서 mock 값을 실제 값으로 바꿉니다. Windows 예시는 다음과 같습니다.</p>
       <pre><code>{
   "name": "naver-works",
@@ -327,7 +339,7 @@ NAVER_WORKS_SCOPES=calendar.read,directory.read,user.profile.read,board.read,gro
     "NAVER_WORKS_USER_ID": "me",
     "NAVER_WORKS_AUTH_MODE": "user_oauth",
     "NAVER_WORKS_ENFORCE_SCOPES": "true",
-    "NAVER_WORKS_SCOPES": "calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read"
+    "NAVER_WORKS_SCOPES": "calendar.read,directory.read,contact.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read"
   }
 }</code></pre>
       <p class="small">Ubuntu라면 <code>args</code> 경로를 <code>/home/사용자/NAVER_WORKS_MCP/dist/index.js</code>로 바꿉니다. Hermes를 완전히 종료했다가 다시 실행해야 환경 변수가 반영됩니다.</p>

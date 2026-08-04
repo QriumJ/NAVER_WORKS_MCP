@@ -2,7 +2,7 @@ import { McpServer, type McpServerFactory } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { loadConfig, MCP_PROTOCOL_VERSION, publicConfig } from "./config.js";
-import { pathSegment, projectBoard, projectBoardPost, projectBoardPosts, projectBoards, projectCalendarEvents, projectCalendarPersonals, projectCalendarProperties, projectFormResponses, projectGroup, projectGroupMembers, projectGroups, projectNotePost, projectNotePosts, projectOrgUnits, projectTask, projectTaskCategories, projectTasks, projectBot, projectBots, projectUsers, validateDateRange, WorksApiClient, WorksApiError } from "./works-api.js";
+import { pathSegment, projectBoard, projectBoardPost, projectBoardPosts, projectBoards, projectCalendarEvents, projectCalendarPersonals, projectCalendarProperties, projectContact, projectContacts, projectFormResponses, projectGroup, projectGroupMembers, projectGroups, projectNotePost, projectNotePosts, projectOrgUnits, projectTask, projectTaskCategories, projectTasks, projectBot, projectBots, projectUsers, validateDateRange, WorksApiClient, WorksApiError } from "./works-api.js";
 
 const idSchema = z.string().trim().min(1).max(200);
 const numericIdSchema = z.number().int().positive();
@@ -114,6 +114,78 @@ export function createServerFactory(): McpServerFactory {
     }, wrap(async ({ userId }: { userId: string }) => {
       const response = await api.request("GET", `/users/${pathSegment(api.getUserId(userId), "userId")}`, { requiredScopes: ["user.profile.read"] });
       return projectUsers({ users: [response.data] });
+    }));
+
+    const contactDateTimeSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/, "YYYY-MM-DDThh:mm:ss[.SSS]TZD 형식이어야 합니다.");
+    const contactListInput = z.object({
+      count: z.number().int().min(1).max(500).default(100),
+      cursor: cursorSchema,
+      searchDateType: z.enum(["CREATED_TIME", "MODIFIED_TIME"]).optional(),
+      startDateTime: contactDateTimeSchema.optional(),
+      endDateTime: contactDateTimeSchema.optional(),
+      accessibleRange: z.enum(["ALL", "MEMBER"]).optional(),
+      contactTagId: idSchema.optional(),
+      email: z.string().trim().max(256).optional(),
+      telephone: z.string().trim().max(100).optional(),
+      searchFilterType: z.literal("LINKED_EXTERNAL_USER").optional(),
+      orderBy: z.enum(["name", "createdTime", "modifiedTime"]).optional(),
+      sortOrder: z.enum(["asc", "desc"]).default("asc"),
+    }).refine(({ searchDateType, startDateTime, endDateTime }) => {
+      const anyDate = startDateTime !== undefined || endDateTime !== undefined;
+      return !anyDate || (searchDateType !== undefined && startDateTime !== undefined && endDateTime !== undefined);
+    }, "startDateTime/endDateTime를 사용할 때는 searchDateType과 두 날짜를 모두 입력하세요.");
+    type ContactListArgs = {
+      count?: number;
+      cursor?: string;
+      searchDateType?: "CREATED_TIME" | "MODIFIED_TIME";
+      startDateTime?: string;
+      endDateTime?: string;
+      accessibleRange?: "ALL" | "MEMBER";
+      contactTagId?: string;
+      email?: string;
+      telephone?: string;
+      searchFilterType?: "LINKED_EXTERNAL_USER";
+      orderBy?: "name" | "createdTime" | "modifiedTime";
+      sortOrder?: "asc" | "desc";
+    };
+    const contactQuery = ({ count, cursor, searchDateType, startDateTime, endDateTime, accessibleRange, contactTagId, email, telephone, searchFilterType, orderBy, sortOrder }: ContactListArgs, includeUserSearchFields = false) => ({
+      count,
+      cursor,
+      searchDateType,
+      startDateTime,
+      endDateTime,
+      accessibleRange,
+      contactTagId,
+      ...(includeUserSearchFields ? { email, telephone } : {}),
+      searchFilterType,
+      orderBy: orderBy ? `${orderBy} ${sortOrder ?? "asc"}` : undefined,
+    });
+
+    server.registerTool("works_contacts_list", {
+      title: "주소록 전체 목록 조회",
+      description: "접근 권한이 있는 NAVER WORKS 주소록 연락처를 커서 기반으로 조회합니다. 이메일은 일부 마스킹되어 반환됩니다.",
+      inputSchema: contactListInput,
+    }, wrap(async (args: ContactListArgs) => {
+      const response = await api.request("GET", "/contacts", { query: contactQuery(args), requiredScopes: ["contact.read"] });
+      return projectContacts(response.data);
+    }));
+
+    server.registerTool("works_user_contacts_list", {
+      title: "내 주소록 목록 조회",
+      description: "특정 구성원이 접근 가능한 NAVER WORKS 주소록 연락처를 조회합니다. userId를 생략하면 NAVER_WORKS_USER_ID를 사용합니다.",
+      inputSchema: contactListInput.extend({ userId: idSchema.optional() }),
+    }, wrap(async ({ userId, ...args }: ContactListArgs & { userId?: string }) => {
+      const response = await api.request("GET", `/users/${pathSegment(api.getUserId(userId), "userId")}/contacts`, { query: contactQuery(args, true), requiredScopes: ["contact.read"] });
+      return projectContacts(response.data);
+    }));
+
+    server.registerTool("works_contact_get", {
+      title: "주소록 연락처 상세 조회",
+      description: "contactId로 주소록 연락처의 최소 상세 정보를 조회합니다. 이메일은 일부 마스킹되어 반환됩니다.",
+      inputSchema: z.object({ contactId: idSchema }),
+    }, wrap(async ({ contactId }: { contactId: string }) => {
+      const response = await api.request("GET", `/contacts/${pathSegment(contactId, "contactId")}`, { requiredScopes: ["contact.read"] });
+      return projectContact(response.data);
     }));
 
     // Free-plan read-only surfaces. Board is the ordinary company notice board;

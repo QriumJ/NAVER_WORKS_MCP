@@ -2,7 +2,7 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHttpHandler } from "../src/index.js";
 import { loadConfig } from "../src/config.js";
-import { pathSegment, projectCalendarEvents, projectCalendarPersonals, projectCalendarProperties, projectUsers, rateLimitRoute, WorksApiClient } from "../src/works-api.js";
+import { pathSegment, projectCalendarEvents, projectCalendarPersonals, projectCalendarProperties, projectContacts, projectUsers, rateLimitRoute, WorksApiClient } from "../src/works-api.js";
 
 const envelope = {
   "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -34,7 +34,7 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
 
   before(() => {
     process.env.NAVER_WORKS_MOCK = "true";
-    process.env.NAVER_WORKS_SCOPES = "calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read";
+    process.env.NAVER_WORKS_SCOPES = "calendar.read,directory.read,contact.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read";
     process.env.NAVER_WORKS_ENFORCE_SCOPES = "true";
     process.env.NAVER_WORKS_WRITE_ENABLED = "false";
     process.env.NAVER_WORKS_DELETE_ENABLED = "false";
@@ -61,6 +61,9 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     assert.ok(names.includes("works_group_note_post_get"));
     assert.ok(names.includes("works_tasks_list"));
     assert.ok(names.includes("works_form_responses_list"));
+    assert.ok(names.includes("works_contacts_list"));
+    assert.ok(names.includes("works_user_contacts_list"));
+    assert.ok(names.includes("works_contact_get"));
     assert.equal(names.includes("works_board_post_create"), false, "write tools must be off by default");
     assert.equal(names.includes("works_board_post_delete"), false, "delete tools must be off by default");
     assert.equal(payload.result?.ttlMs, 30_000);
@@ -237,6 +240,47 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     assert.doesNotMatch(JSON.stringify(projected), /private@example\.com|externalKey|privateNote/);
   });
 
+  it("projects address-book contacts to minimal fields and masks email", () => {
+    const projected = projectContacts({
+      contacts: [{
+        contactId: "contact-1",
+        contactName: { lastName: "홍", firstName: "길동", privateNote: "ignore" },
+        permission: { accessibleRange: "ALL", masterUserId: "owner-secret" },
+        emails: [{ primary: true, email: "contact@example.com" }],
+        telephones: [{ primary: true, telephone: "010-1234-5678" }],
+        organizations: [{ primary: true, name: "Example", department: "기획", title: "팀장" }],
+        memo: "private memo",
+        contactTagIds: ["tag-secret"],
+        customProperties: { secret: "do-not-return" },
+      }],
+      responseMetaData: { nextCursor: "next" },
+    }) as { contacts: Array<Record<string, unknown>>; responseMetaData: Record<string, unknown> };
+    assert.deepEqual(projected.contacts[0], {
+      contactId: "contact-1",
+      contactName: { firstName: "길동", lastName: "홍", nickName: undefined },
+      email: "c***@example.com",
+      telephone: "010-1234-5678",
+      organization: { name: "Example", department: "기획", title: "팀장" },
+      permission: { accessibleRange: "ALL" },
+      linkedExternalUser: undefined,
+    });
+    assert.equal(projected.responseMetaData.nextCursor, "next");
+    assert.doesNotMatch(JSON.stringify(projected), /private memo|tag-secret|owner-secret|do-not-return|privateNote/);
+  });
+
+  it("reads mock address-book list and contact detail", async () => {
+    const list = await handler.fetch(request("tools/call", 34, { name: "works_user_contacts_list", arguments: { userId: "mock-user" } }, "works_user_contacts_list"));
+    const listPayload = await list.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+    assert.notEqual(listPayload.result?.isError, true);
+    assert.match(listPayload.result?.content?.[0]?.text ?? "", /mock-contact/);
+    assert.doesNotMatch(listPayload.result?.content?.[0]?.text ?? "", /contact@example\.com/);
+
+    const detail = await handler.fetch(request("tools/call", 35, { name: "works_contact_get", arguments: { contactId: "mock-contact" } }, "works_contact_get"));
+    const detailPayload = await detail.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+    assert.notEqual(detailPayload.result?.isError, true);
+    assert.match(detailPayload.result?.content?.[0]?.text ?? "", /MCP/);
+  });
+
   it("returns the mock profile shape for a profile lookup", async () => {
     const response = await handler.fetch(request("tools/call", 7, { name: "works_directory_user_profile_get", arguments: { userId: "mock-user" } }, "works_directory_user_profile_get"));
     const payload = await response.json() as { result?: { content?: Array<{ text?: string }> } };
@@ -298,6 +342,8 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
   it("normalizes user and calendar identifiers for the Free-plan rate bucket", () => {
     assert.equal(rateLimitRoute("/users/alice/calendar/events"), "/users/:user/calendar/events");
     assert.equal(rateLimitRoute("/users/alice/calendars/cal-1/events"), "/users/:user/calendars/:calendar/events");
+    assert.equal(rateLimitRoute("/users/alice/contacts"), "/users/:user/contacts");
+    assert.equal(rateLimitRoute("/contacts/contact-1"), "/contacts/:contact");
   });
 
   it("counts each read-only retry as a physical upstream attempt", async () => {

@@ -129,12 +129,14 @@ export function rateLimitRoute(path: string): string {
   if (parts[0] === "forms") return "/forms/:form/responses";
   if (parts[0] === "bots") return "/bots/:bot";
   if (parts[0] === "orgunits") return "/orgunits";
+  if (parts[0] === "contacts") return parts[1] ? "/contacts/:contact" : "/contacts";
   if (parts[0] !== "users") return `/${parts[0] ?? "root"}`;
   if (parts.length === 1) return "/users";
   if (parts[2] === "calendar" || parts[2] === "calendar-personals") {
     return `/users/:user/${parts.slice(2).join("/")}`;
   }
   if (parts[2] === "tasks" || parts[2] === "task-categories") return `/users/:user/${parts[2]}`;
+  if (parts[2] === "contacts") return "/users/:user/contacts";
   if (parts[2] === "calendars") return "/users/:user/calendars/:calendar/events";
   return "/users/:user";
 }
@@ -262,6 +264,51 @@ export function projectUsers(payload: unknown): unknown {
     }),
     responseMetaData: projectResponseMetaData(root.responseMetaData),
   };
+}
+
+function projectContactItem(value: unknown) {
+  const contact = asRecord(value) ?? {};
+  const name = asRecord(contact.contactName) ?? {};
+  const permission = asRecord(contact.permission) ?? {};
+  const linkedExternalUser = asRecord(contact.linkedExternalUser);
+  const emails = Array.isArray(contact.emails) ? contact.emails : [];
+  const telephones = Array.isArray(contact.telephones) ? contact.telephones : [];
+  const organizations = Array.isArray(contact.organizations) ? contact.organizations : [];
+  const primaryValue = (values: unknown[]) => {
+    const records = values.flatMap((item) => {
+      const record = asRecord(item);
+      return record ? [record] : [];
+    });
+    return records.find((record) => record.primary === true) ?? records[0];
+  };
+  const primaryEmail = primaryValue(emails);
+  const primaryTelephone = primaryValue(telephones);
+  const primaryOrganization = primaryValue(organizations);
+  return {
+    contactId: typeof contact.contactId === "string" ? contact.contactId : undefined,
+    contactName: {
+      firstName: typeof name.firstName === "string" ? name.firstName : undefined,
+      lastName: typeof name.lastName === "string" ? name.lastName : undefined,
+      nickName: typeof name.nickName === "string" ? name.nickName : undefined,
+    },
+    email: maskEmail(primaryEmail?.email),
+    telephone: typeof primaryTelephone?.telephone === "string" ? primaryTelephone.telephone : undefined,
+    organization: primaryOrganization ? {
+      name: typeof primaryOrganization.name === "string" ? primaryOrganization.name : undefined,
+      department: typeof primaryOrganization.department === "string" ? primaryOrganization.department : undefined,
+      title: typeof primaryOrganization.title === "string" ? primaryOrganization.title : undefined,
+    } : undefined,
+    permission: typeof permission.accessibleRange === "string" ? { accessibleRange: permission.accessibleRange } : undefined,
+    linkedExternalUser: linkedExternalUser && typeof linkedExternalUser.type === "string" ? { type: linkedExternalUser.type } : undefined,
+  };
+}
+
+export function projectContacts(payload: unknown): unknown {
+  return projectList(payload, "contacts", projectContactItem);
+}
+
+export function projectContact(payload: unknown): unknown {
+  return projectContactItem(payload);
 }
 
 function projectList<T>(payload: unknown, key: string, itemProject: (value: unknown) => T): Record<string, unknown> {
@@ -508,6 +555,8 @@ const MOCK = {
   personals: { calendarPersonals: [{ calendarId: "mock-calendar", calendarName: "기본 캘린더", isShowOnLNBList: true, displayOrder: 0 }], responseMetaData: { nextCursor: "" } },
   events: { events: [{ eventComponents: [{ eventId: "mock-event", summary: "MCP mock 일정", start: { dateTime: "2026-08-03T09:00:00+09:00", timeZone: "Asia/Seoul" }, end: { dateTime: "2026-08-03T10:00:00+09:00", timeZone: "Asia/Seoul" }, location: "온라인" }] }], responseMetaData: { nextCursor: "" } },
   users: { users: [{ userId: "mock-user", email: "user@example.com", userName: { lastName: "MCP", firstName: "사용자" }, organizations: [] }], responseMetaData: { nextCursor: "" } },
+  contacts: { contacts: [{ contactId: "mock-contact", permission: { accessibleRange: "ALL" }, contactName: { lastName: "Mock", firstName: "Contact", nickName: "MCP" }, emails: [{ primary: true, email: "contact@example.com" }], telephones: [{ primary: true, telephone: "010-0000-0000", type: "CELLPHONE" }], organizations: [{ primary: true, name: "MCP Example", department: "Engineering", title: "User" }], customProperties: { internal: "do-not-return" } }], responseMetaData: { nextCursor: "" } },
+  contact: { contactId: "mock-contact", permission: { accessibleRange: "ALL" }, contactName: { lastName: "Mock", firstName: "Contact", nickName: "MCP" }, emails: [{ primary: true, email: "contact@example.com" }], telephones: [{ primary: true, telephone: "010-0000-0000", type: "CELLPHONE" }], organizations: [{ primary: true, name: "MCP Example", department: "Engineering", title: "User" }], customProperties: { internal: "do-not-return" } },
   boards: { boards: [{ boardId: 100, boardName: "공지사항", description: "Mock 공지 게시판", createdTime: "2026-08-01T00:00:00+09:00", modifiedTime: "2026-08-03T00:00:00+09:00", displayOrder: 1 }], responseMetaData: { nextCursor: "" } },
   boardPosts: { posts: [{ boardId: 100, postId: 1, title: "MCP mock 공지", readCount: 0, commentCount: 0, fileCount: 0, createdTime: "2026-08-03T09:00:00+09:00", modifiedTime: "2026-08-03T09:00:00+09:00", isMustRead: true, isUnread: true, userName: "MCP" }], responseMetaData: { nextCursor: "" } },
   boardPost: { boardId: 100, postId: 1, title: "MCP mock 공지", body: "모의 공지 본문입니다.", readCount: 0, commentCount: 0, fileCount: 0, createdTime: "2026-08-03T09:00:00+09:00", modifiedTime: "2026-08-03T09:00:00+09:00", isMustRead: true, isUnread: true, userName: "MCP" },
@@ -638,10 +687,13 @@ export class WorksApiClient {
     if (/^\/bots\/[^/]+$/.test(path)) return { data: MOCK.bot as T, status: 200 };
     if (path === "/orgunits") return { data: MOCK.orgUnits as T, status: 200 };
     if (/^\/forms\/[^/]+\/responses$/.test(path)) return { data: MOCK.formResponses as T, status: 200 };
+    if (path === "/contacts") return { data: MOCK.contacts as T, status: 200 };
+    if (/^\/contacts\/[^/]+$/.test(path)) return { data: MOCK.contact as T, status: 200 };
     if (path.endsWith("/calendar")) return { data: MOCK.calendar as T, status: 200 };
     if (path.endsWith("/calendar-personals")) return { data: MOCK.personals as T, status: 200 };
     if (path.includes("/calendar/events") || path.includes("/calendars/")) return { data: MOCK.events as T, status: 200 };
     if (path === "/users") return { data: MOCK.users as T, status: 200 };
+    if (/^\/users\/[^/]+\/contacts$/.test(path)) return { data: MOCK.contacts as T, status: 200 };
     if (/^\/users\/[^/]+$/.test(path)) return { data: MOCK.users.users[0] as T, status: 200 };
     return { data: {} as T, status: 200 };
   }

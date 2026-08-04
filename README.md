@@ -7,12 +7,12 @@
 ```dotenv
 NAVER_WORKS_WRITE_ENABLED=true
 NAVER_WORKS_DELETE_ENABLED=false
-NAVER_WORKS_SCOPES=calendar,board,group.note,task,bot.message,bot,calendar.read,board.read,group.note.read,task.read,bot.read,directory.read,user.profile.read
+NAVER_WORKS_SCOPES=calendar,board,group.note,task,bot.message,bot,calendar.read,board.read,group.note.read,task.read,bot.read,directory.read,contact.read,user.profile.read
 ```
 
 삭제 Tool은 `NAVER_WORKS_DELETE_ENABLED=true`까지 별도로 켜야 나타납니다. 쓰기 Tool은 매 호출 `confirm=true`가 필수이므로, Hermes는 실행 전에 대상·내용·수신자·삭제 여부를 사용자에게 보여주고 다시 승인받아야 합니다. 끄려면 두 환경변수를 `false`로 바꾸고 MCP를 재시작하세요. Scope를 추가해도 MCP에 등록되지 않은 API(Contact, File, Mail, Audit 등)는 호출되지 않습니다.
 
-Hermes에서 자연어로 NAVER WORKS의 **일정·구성원·그룹·공지 정보**를 조회하고, 명시적으로 켠 경우에만 승인형 쓰기 작업을 수행하는 MCP 서버입니다. 추천도가 중간 이하인 Contact·Drive·Security 계열은 노출하지 않습니다. MCP 프로토콜 `2026-07-28`의 무상태 HTTP 규칙과 로컬 stdio 연결을 함께 제공합니다.
+Hermes에서 자연어로 NAVER WORKS의 **일정·주소록·구성원·그룹·공지 정보**를 조회하고, 명시적으로 켠 경우에만 승인형 쓰기 작업을 수행하는 MCP 서버입니다. 주소록은 `contact.read`로 읽기 전용 연결되며 Contact 생성·수정·삭제는 별도 Tool로 등록하지 않습니다. MCP 프로토콜 `2026-07-28`의 무상태 HTTP 규칙과 로컬 stdio 연결을 함께 제공합니다.
 
 > 처음 사용하는 분은 [비개발자용 HTML 설명서](docs/hermes_naver_works_setup.html)를 먼저 여세요. 화면에서 순서대로 따라 하면 됩니다.
 
@@ -22,13 +22,13 @@ Hermes에서 자연어로 NAVER WORKS의 **일정·구성원·그룹·공지 정
 - 일정 속성/목록, 조직 구성원/그룹/조직 목록과 프로필, 게시판·그룹 노트 공지, 할 일·Bot·설문 메타데이터를 제공합니다.
 - 기본값은 로컬 컴퓨터에서만 실행되는 `stdio`입니다. 인터넷에 공개하지 않아 가장 안전합니다.
 - 실제 토큰이 없을 때는 `NAVER_WORKS_MOCK=true`로 연결 연습과 계약 테스트를 할 수 있습니다.
-- 기본 모드에서는 메시지 보내기, 수정/삭제 기능이 꺼져 있습니다. `NAVER_WORKS_WRITE_ENABLED=true`일 때만 일정·게시판·그룹 Note·할 일 쓰기와 Bot 텍스트 전송 Tool이 노출되고, `NAVER_WORKS_DELETE_ENABLED=true`를 추가해야 삭제 Tool이 노출됩니다. Contact·Mail·Drive·Security·Audit·Archive 기능은 등록하지 않았습니다.
+- 기본 모드에서는 메시지 보내기, 수정/삭제 기능이 꺼져 있습니다. `NAVER_WORKS_WRITE_ENABLED=true`일 때만 일정·게시판·그룹 Note·할 일 쓰기와 Bot 텍스트 전송 Tool이 노출되고, `NAVER_WORKS_DELETE_ENABLED=true`를 추가해야 삭제 Tool이 노출됩니다. 주소록은 목록·상세 읽기만 제공하며 Mail·Drive·Security·Audit·Archive 기능은 등록하지 않았습니다.
 
 ## 먼저 준비할 것
 
 1. Windows/macOS/Linux 중 하나
 2. Node.js 20.11 이상
-3. NAVER WORKS Developer Console에서 발급한 사용자 OAuth Access Token
+3. NAVER WORKS Developer Console에서 발급한 사용자 OAuth Access Token (`contact.read` 포함)
 4. 조회할 NAVER WORKS 사용자의 `userId`
 5. Hermes의 MCP 서버 추가 화면
 
@@ -226,6 +226,7 @@ docker compose up --build
 ```
 calendar.read
 directory.read
+contact.read
 user.profile.read
 board.read
 group.read
@@ -250,7 +251,7 @@ NAVER_WORKS_USER_ID=조회할_사용자_ID
 NAVER_WORKS_AUTH_MODE=user_oauth
 NAVER_WORKS_API_BASE=https://www.worksapis.com/v1.0
 NAVER_WORKS_ENFORCE_SCOPES=true
-NAVER_WORKS_SCOPES=calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read
+NAVER_WORKS_SCOPES=calendar.read,directory.read,contact.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read
 ```
 
 토큰 앞에 `Bearer `를 붙이지 마세요. 서버가 요청 헤더에 자동으로 붙입니다. 토큰을 바꾼 뒤 Hermes를 완전히 다시 시작해야 새 환경 변수가 반영됩니다.
@@ -289,6 +290,9 @@ MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=8787 node dist/index.js
 | `works_calendar_events_list` | 지정 캘린더 일정 |
 | `works_directory_users_list` | 조직 구성원 목록 |
 | `works_directory_user_profile_get` | 한 명의 최소 프로필 조회 |
+| `works_contacts_list` | 접근 가능한 주소록 전체 목록 |
+| `works_user_contacts_list` | 특정 구성원의 주소록 목록 |
+| `works_contact_get` | 주소록 연락처 상세 조회 |
 | `works_boards_list` | 읽을 수 있는 게시판 목록 |
 | `works_board_recent_posts_list` | 최근 30일 게시글 |
 | `works_board_must_read_posts_list` | 필독 공지 목록 |
