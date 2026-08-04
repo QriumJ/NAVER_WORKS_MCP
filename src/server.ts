@@ -136,7 +136,7 @@ export function createServerFactory(): McpServerFactory {
     const contactListInput = contactListShape.refine(contactDateFilterIsComplete, "startDateTime/endDateTime를 사용할 때는 searchDateType과 두 날짜를 모두 입력하세요.");
     const userContactListInput = contactListShape.extend({
       email: z.string().trim().max(256).optional(),
-      telephone: z.string().trim().max(100).optional(),
+      telephone: z.string().trim().regex(/^\d{4,}$/, "전화번호 검색은 4자리 이상의 숫자만 입력하세요.").max(100).optional(),
       userId: idSchema.optional(),
     }).refine(contactDateFilterIsComplete, "startDateTime/endDateTime를 사용할 때는 searchDateType과 두 날짜를 모두 입력하세요.");
     type ContactListArgs = {

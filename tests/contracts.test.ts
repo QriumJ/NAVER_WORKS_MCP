@@ -314,6 +314,14 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const reversedPayload = await reversed.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
     assert.equal(reversedPayload.result?.isError, true);
     assert.match(reversedPayload.result?.content?.[0]?.text ?? "", /유효하지 않습니다/);
+
+    const invalidTelephone = await handler.fetch(request("tools/call", 40, {
+      name: "works_user_contacts_list",
+      arguments: { userId: "mock-user", telephone: "123" },
+    }, "works_user_contacts_list"));
+    const invalidTelephonePayload = await invalidTelephone.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+    assert.equal(invalidTelephonePayload.result?.isError, true);
+    assert.match(invalidTelephonePayload.result?.content?.[0]?.text ?? "", /4자리/);
   });
 
   it("does not forward user-only contact search fields to the global list endpoint", async () => {
