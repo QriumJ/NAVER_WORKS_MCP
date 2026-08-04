@@ -131,7 +131,7 @@ NAVER_WORKS_USER_ID=mock-user</code></pre>
         <li><b>프로그램 만들기와 검사</b>
           <pre><code>npm run build
 npm test</code></pre>
-          <span class="small">테스트 결과에 22개 통과가 표시되면 정상입니다.</span>
+          <span class="small">테스트 결과에 27개 통과가 표시되면 정상입니다.</span>
         </li>
         <li><b>Hermes에 MCP 서버 추가</b><br>전송 방식은 <code>stdio</code>, 실행 파일은 <code>node</code>, 인자는 운영체제에 맞는 절대 경로로 입력합니다.
           <pre><code>{
@@ -176,7 +176,7 @@ npm test</code></pre>
 4. 저장소가 없으면 환경에 맞는 명령으로 기본 main을 내려받아:
    git clone https://github.com/QriumJ/NAVER_WORKS_MCP.git NAVER_WORKS_MCP
 5. 저장소 폴더에서 npm install과 npm run build를 실행해. Docker라면 Dockerfile 또는 compose.yaml을 사용해.
-6. 실제 토큰을 요구하거나 출력하지 말고 NAVER_WORKS_MOCK=true로 npm test를 실행해 22개 테스트를 확인해.
+6. 실제 토큰을 요구하거나 출력하지 말고 NAVER_WORKS_MOCK=true로 npm test를 실행해 27개 테스트를 확인해.
 7. Hermes와 MCP가 같은 환경이면 stdio를 사용해. Docker 컨테이너가 분리되어 있으면 compose.yaml의 HTTP 서비스와 서비스 이름 naver-works-mcp를 사용해.
 8. HTTP Docker 서비스는 MCP_HOST=0.0.0.0, 32자 이상 MCP_SHARED_SECRET, MCP_ALLOWED_HOSTS에 실제 서비스 이름을 설정하고 외부 공개 시 TLS reverse proxy를 사용해.
 9. 설치·빌드·테스트·등록 결과를 단계별로 보고하고, 실패하면 원인과 다음 명령만 알려 줘.

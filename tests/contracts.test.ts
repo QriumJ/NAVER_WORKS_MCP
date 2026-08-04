@@ -70,6 +70,11 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     assert.equal(payload.result?.cacheScope, "public");
     const usersList = payload.result?.tools?.find((tool) => tool.name === "works_directory_users_list");
     assert.equal(usersList?.inputSchema?.properties?.email, undefined);
+    const contactsList = payload.result?.tools?.find((tool) => tool.name === "works_contacts_list");
+    const userContactsList = payload.result?.tools?.find((tool) => tool.name === "works_user_contacts_list");
+    assert.equal(contactsList?.inputSchema?.properties?.email, undefined, "global contact list must not expose user-only email filter");
+    assert.equal(contactsList?.inputSchema?.properties?.telephone, undefined, "global contact list must not expose user-only telephone filter");
+    assert.ok(userContactsList?.inputSchema?.properties?.email, "user contact list may expose the official email filter");
   });
 
   it("executes a mock tool without a session handshake", async () => {
@@ -279,6 +284,76 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const detailPayload = await detail.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
     assert.notEqual(detailPayload.result?.isError, true);
     assert.match(detailPayload.result?.content?.[0]?.text ?? "", /MCP/);
+  });
+
+  it("enforces contact scope and the official seven-day date window", async () => {
+    const oldScopesForContact = process.env.NAVER_WORKS_SCOPES;
+    process.env.NAVER_WORKS_SCOPES = "directory.read";
+    try {
+      const missingScopeHandler = createHttpHandler();
+      const missingScope = await missingScopeHandler.fetch(request("tools/call", 36, { name: "works_contacts_list", arguments: {} }, "works_contacts_list"));
+      const missingScopePayload = await missingScope.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+      assert.equal(missingScopePayload.result?.isError, true);
+      assert.match(missingScopePayload.result?.content?.[0]?.text ?? "", /contact\.read/);
+    } finally {
+      if (oldScopesForContact === undefined) delete process.env.NAVER_WORKS_SCOPES; else process.env.NAVER_WORKS_SCOPES = oldScopesForContact;
+    }
+
+    const tooLong = await handler.fetch(request("tools/call", 37, {
+      name: "works_user_contacts_list",
+      arguments: { userId: "mock-user", searchDateType: "CREATED_TIME", startDateTime: "2026-08-01T00:00:00+09:00", endDateTime: "2026-08-09T00:00:00+09:00" },
+    }, "works_user_contacts_list"));
+    const tooLongPayload = await tooLong.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+    assert.equal(tooLongPayload.result?.isError, true);
+    assert.match(tooLongPayload.result?.content?.[0]?.text ?? "", /7일/);
+
+    const reversed = await handler.fetch(request("tools/call", 38, {
+      name: "works_contacts_list",
+      arguments: { searchDateType: "MODIFIED_TIME", startDateTime: "2026-08-09T00:00:00+09:00", endDateTime: "2026-08-01T00:00:00+09:00" },
+    }, "works_contacts_list"));
+    const reversedPayload = await reversed.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+    assert.equal(reversedPayload.result?.isError, true);
+    assert.match(reversedPayload.result?.content?.[0]?.text ?? "", /유효하지 않습니다/);
+  });
+
+  it("does not forward user-only contact search fields to the global list endpoint", async () => {
+    const oldMockForUrl = process.env.NAVER_WORKS_MOCK;
+    const oldTokenForUrl = process.env.NAVER_WORKS_ACCESS_TOKEN;
+    const oldBaseForUrl = process.env.NAVER_WORKS_API_BASE;
+    const oldScopesForUrl = process.env.NAVER_WORKS_SCOPES;
+    const oldEnforceForUrl = process.env.NAVER_WORKS_ENFORCE_SCOPES;
+    const originalFetch = globalThis.fetch;
+    let requestedUrl = "";
+    process.env.NAVER_WORKS_MOCK = "false";
+    process.env.NAVER_WORKS_ACCESS_TOKEN = "test-token";
+    process.env.NAVER_WORKS_API_BASE = "https://www.worksapis.com/v1.0";
+    process.env.NAVER_WORKS_SCOPES = "contact.read";
+    process.env.NAVER_WORKS_ENFORCE_SCOPES = "true";
+    globalThis.fetch = (async (input) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify({ contacts: [], responseMetaData: { nextCursor: "" } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    try {
+      const liveHandler = createHttpHandler();
+      const response = await liveHandler.fetch(request("tools/call", 39, {
+        name: "works_contacts_list",
+        arguments: { count: 10, email: "example@example.com", telephone: "01012345678" },
+      }, "works_contacts_list"));
+      const payload = await response.json() as { result?: { isError?: boolean } };
+      assert.notEqual(payload.result?.isError, true);
+      const url = new URL(requestedUrl);
+      assert.equal(url.pathname, "/v1.0/contacts");
+      assert.equal(url.searchParams.get("count"), "10");
+      assert.equal(url.searchParams.get("email"), null);
+      assert.equal(url.searchParams.get("telephone"), null);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (oldMockForUrl === undefined) delete process.env.NAVER_WORKS_MOCK; else process.env.NAVER_WORKS_MOCK = oldMockForUrl;
+      if (oldTokenForUrl === undefined) delete process.env.NAVER_WORKS_ACCESS_TOKEN; else process.env.NAVER_WORKS_ACCESS_TOKEN = oldTokenForUrl;
+      if (oldBaseForUrl === undefined) delete process.env.NAVER_WORKS_API_BASE; else process.env.NAVER_WORKS_API_BASE = oldBaseForUrl;
+      if (oldScopesForUrl === undefined) delete process.env.NAVER_WORKS_SCOPES; else process.env.NAVER_WORKS_SCOPES = oldScopesForUrl;
+      if (oldEnforceForUrl === undefined) delete process.env.NAVER_WORKS_ENFORCE_SCOPES; else process.env.NAVER_WORKS_ENFORCE_SCOPES = oldEnforceForUrl;
+    }
   });
 
   it("returns the mock profile shape for a profile lookup", async () => {

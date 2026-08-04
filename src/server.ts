@@ -117,7 +117,11 @@ export function createServerFactory(): McpServerFactory {
     }));
 
     const contactDateTimeSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/, "YYYY-MM-DDThh:mm:ss[.SSS]TZD 형식이어야 합니다.");
-    const contactListInput = z.object({
+    const contactDateFilterIsComplete = ({ searchDateType, startDateTime, endDateTime }: { searchDateType?: string; startDateTime?: string; endDateTime?: string }) => {
+      const anyDate = startDateTime !== undefined || endDateTime !== undefined;
+      return !anyDate || (searchDateType !== undefined && startDateTime !== undefined && endDateTime !== undefined);
+    };
+    const contactListShape = z.object({
       count: z.number().int().min(1).max(500).default(100),
       cursor: cursorSchema,
       searchDateType: z.enum(["CREATED_TIME", "MODIFIED_TIME"]).optional(),
@@ -125,15 +129,16 @@ export function createServerFactory(): McpServerFactory {
       endDateTime: contactDateTimeSchema.optional(),
       accessibleRange: z.enum(["ALL", "MEMBER"]).optional(),
       contactTagId: idSchema.optional(),
-      email: z.string().trim().max(256).optional(),
-      telephone: z.string().trim().max(100).optional(),
       searchFilterType: z.literal("LINKED_EXTERNAL_USER").optional(),
       orderBy: z.enum(["name", "createdTime", "modifiedTime"]).optional(),
       sortOrder: z.enum(["asc", "desc"]).default("asc"),
-    }).refine(({ searchDateType, startDateTime, endDateTime }) => {
-      const anyDate = startDateTime !== undefined || endDateTime !== undefined;
-      return !anyDate || (searchDateType !== undefined && startDateTime !== undefined && endDateTime !== undefined);
-    }, "startDateTime/endDateTime를 사용할 때는 searchDateType과 두 날짜를 모두 입력하세요.");
+    });
+    const contactListInput = contactListShape.refine(contactDateFilterIsComplete, "startDateTime/endDateTime를 사용할 때는 searchDateType과 두 날짜를 모두 입력하세요.");
+    const userContactListInput = contactListShape.extend({
+      email: z.string().trim().max(256).optional(),
+      telephone: z.string().trim().max(100).optional(),
+      userId: idSchema.optional(),
+    }).refine(contactDateFilterIsComplete, "startDateTime/endDateTime를 사용할 때는 searchDateType과 두 날짜를 모두 입력하세요.");
     type ContactListArgs = {
       count?: number;
       cursor?: string;
@@ -148,6 +153,16 @@ export function createServerFactory(): McpServerFactory {
       orderBy?: "name" | "createdTime" | "modifiedTime";
       sortOrder?: "asc" | "desc";
     };
+    function validateContactDateRange({ searchDateType, startDateTime, endDateTime }: ContactListArgs): void {
+      const anyDate = startDateTime !== undefined || endDateTime !== undefined;
+      if (!anyDate) return;
+      if (!searchDateType || !startDateTime || !endDateTime) throw new WorksApiError("startDateTime/endDateTime를 사용할 때는 searchDateType과 두 날짜를 모두 입력하세요.");
+      const start = new Date(startDateTime);
+      const end = new Date(endDateTime);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) throw new WorksApiError("주소록 조회 날짜 범위가 유효하지 않습니다.");
+      const days = (end.getTime() - start.getTime()) / 86_400_000;
+      if (days > 7) throw new WorksApiError("NAVER WORKS 주소록 API의 최대 조회 범위(7일)를 초과했습니다.");
+    }
     const contactQuery = ({ count, cursor, searchDateType, startDateTime, endDateTime, accessibleRange, contactTagId, email, telephone, searchFilterType, orderBy, sortOrder }: ContactListArgs, includeUserSearchFields = false) => ({
       count,
       cursor,
@@ -166,6 +181,7 @@ export function createServerFactory(): McpServerFactory {
       description: "접근 권한이 있는 NAVER WORKS 주소록 연락처를 커서 기반으로 조회합니다. 이메일은 일부 마스킹되어 반환됩니다.",
       inputSchema: contactListInput,
     }, wrap(async (args: ContactListArgs) => {
+      validateContactDateRange(args);
       const response = await api.request("GET", "/contacts", { query: contactQuery(args), requiredScopes: ["contact.read"] });
       return projectContacts(response.data);
     }));
@@ -173,8 +189,9 @@ export function createServerFactory(): McpServerFactory {
     server.registerTool("works_user_contacts_list", {
       title: "내 주소록 목록 조회",
       description: "특정 구성원이 접근 가능한 NAVER WORKS 주소록 연락처를 조회합니다. userId를 생략하면 NAVER_WORKS_USER_ID를 사용합니다.",
-      inputSchema: contactListInput.extend({ userId: idSchema.optional() }),
+      inputSchema: userContactListInput,
     }, wrap(async ({ userId, ...args }: ContactListArgs & { userId?: string }) => {
+      validateContactDateRange(args);
       const response = await api.request("GET", `/users/${pathSegment(api.getUserId(userId), "userId")}/contacts`, { query: contactQuery(args, true), requiredScopes: ["contact.read"] });
       return projectContacts(response.data);
     }));

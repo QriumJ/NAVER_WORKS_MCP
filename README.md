@@ -10,7 +10,7 @@ NAVER_WORKS_DELETE_ENABLED=false
 NAVER_WORKS_SCOPES=calendar,board,group.note,task,bot.message,bot,calendar.read,board.read,group.note.read,task.read,bot.read,directory.read,contact.read,user.profile.read
 ```
 
-삭제 Tool은 `NAVER_WORKS_DELETE_ENABLED=true`까지 별도로 켜야 나타납니다. 쓰기 Tool은 매 호출 `confirm=true`가 필수이므로, Hermes는 실행 전에 대상·내용·수신자·삭제 여부를 사용자에게 보여주고 다시 승인받아야 합니다. 끄려면 두 환경변수를 `false`로 바꾸고 MCP를 재시작하세요. Scope를 추가해도 MCP에 등록되지 않은 API(Contact, File, Mail, Audit 등)는 호출되지 않습니다.
+삭제 Tool은 `NAVER_WORKS_DELETE_ENABLED=true`까지 별도로 켜야 나타납니다. 쓰기 Tool은 매 호출 `confirm=true`가 필수이므로, Hermes는 실행 전에 대상·내용·수신자·삭제 여부를 사용자에게 보여주고 다시 승인받아야 합니다. 끄려면 두 환경변수를 `false`로 바꾸고 MCP를 재시작하세요. 주소록은 `contact.read` 목록·상세 조회만 제공하며, Scope를 추가해도 MCP에 등록되지 않은 File·Mail·Audit 등은 호출되지 않습니다.
 
 Hermes에서 자연어로 NAVER WORKS의 **일정·주소록·구성원·그룹·공지 정보**를 조회하고, 명시적으로 켠 경우에만 승인형 쓰기 작업을 수행하는 MCP 서버입니다. 주소록은 `contact.read`로 읽기 전용 연결되며 Contact 생성·수정·삭제는 별도 Tool로 등록하지 않습니다. MCP 프로토콜 `2026-07-28`의 무상태 HTTP 규칙과 로컬 stdio 연결을 함께 제공합니다.
 
@@ -100,7 +100,7 @@ npm run build
 npm test
 ```
 
-`22 passing`이 나오면 프로그램 자체는 정상입니다.
+`27 passing`이 나오면 프로그램 자체는 정상입니다.
 
 ### 4) Hermes에 서버 등록
 
@@ -162,7 +162,7 @@ Hermes가 터미널과 파일을 실행할 수 있다면 아래 지시문 전체
 4. 저장소가 없으면 기본 `main`을 내려받아. Windows는 PowerShell 경로, Ubuntu는 bash 경로를 사용해:
    git clone https://github.com/QriumJ/NAVER_WORKS_MCP.git NAVER_WORKS_MCP
 5. 저장소 폴더에서 npm install과 npm run build를 실행해. Docker라면 Dockerfile 또는 compose.yaml을 사용해.
-6. 실제 토큰을 요구하거나 출력하지 말고, NAVER_WORKS_MOCK=true로 npm test를 실행해 22개 테스트 결과를 확인해.
+6. 실제 토큰을 요구하거나 출력하지 말고, NAVER_WORKS_MOCK=true로 npm test를 실행해 27개 테스트 결과를 확인해.
 7. Hermes와 MCP가 같은 환경이면 stdio를 사용해. 다른 Docker 컨테이너라면 MCP를 compose.yaml의 HTTP 서비스로 띄우고 Hermes에는 http://naver-works-mcp:8787/mcp를 설정해.
 8. HTTP Docker 서비스는 MCP_HOST=0.0.0.0, 32자 이상 MCP_SHARED_SECRET, MCP_ALLOWED_HOSTS에 실제 서비스 이름을 설정하고 외부 공개 시 TLS reverse proxy를 사용해. 공유 시크릿을 채팅에 출력하지 마.
 9. 설치·빌드·테스트·등록 결과를 단계별로 보고하고, 실패하면 원인과 다음 명령만 알려 줘.
