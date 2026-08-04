@@ -1,5 +1,6 @@
 import { McpServer, type McpServerFactory } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import type { AppConfig } from "./config.js";
 import { loadConfig, MCP_PROTOCOL_VERSION, publicConfig } from "./config.js";
 import { pathSegment, projectBoard, projectBoardPost, projectBoardPosts, projectBoards, projectCalendarEvents, projectCalendarPersonals, projectCalendarProperties, projectFormResponses, projectGroup, projectGroupMembers, projectGroups, projectNotePost, projectNotePosts, projectOrgUnits, projectTask, projectTaskCategories, projectTasks, projectBot, projectBots, projectUsers, validateDateRange, WorksApiClient, WorksApiError } from "./works-api.js";
 
@@ -20,6 +21,18 @@ function failure(error: unknown) {
   }
   const message = error instanceof Error ? error.message.slice(0, 500) : "알 수 없는 오류";
   return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ error: message }, null, 2) }] };
+}
+
+/**
+ * Write operations are intentionally double-gated:
+ * 1) the process must opt in with NAVER_WORKS_WRITE_ENABLED=true; and
+ * 2) every individual call must contain confirm=true.
+ * Deletes require the additional NAVER_WORKS_DELETE_ENABLED=true switch.
+ */
+function requireWrite(config: AppConfig, confirm: boolean, destructive = false): void {
+  if (!config.writeEnabled) throw new WorksApiError("쓰기 Tool이 꺼져 있습니다. NAVER_WORKS_WRITE_ENABLED=true로 명시적으로 켜세요.");
+  if (destructive && !config.deleteEnabled) throw new WorksApiError("삭제 Tool이 꺼져 있습니다. NAVER_WORKS_DELETE_ENABLED=true로 명시적으로 켜세요.");
+  if (confirm !== true) throw new WorksApiError("외부 데이터 변경은 confirm=true를 포함한 명시적 승인 후에만 실행됩니다.");
 }
 
 function wrap<T extends (...args: never[]) => Promise<unknown>>(fn: T) {
@@ -268,6 +281,288 @@ export function createServerFactory(): McpServerFactory {
       const response = await api.request("GET", `/forms/${pathSegment(formId, "formId")}/responses`, { query: { count, cursor }, requiredScopes: ["form.read"] });
       return projectFormResponses(response.data, { includeAnswers, includeRespondent });
     }));
+
+    // Write tools are not registered at all unless explicitly enabled. This
+    // keeps them out of tools/list in the normal read-only configuration.
+    if (config.writeEnabled) {
+      const confirmSchema = z.literal(true);
+      const dateSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 형식이어야 합니다.");
+
+      const calendarTime = z.object({
+        dateTime: z.string().trim().min(1).max(40).optional(),
+        date: dateSchema.optional(),
+        timeZone: idSchema.optional(),
+      }).refine(({ dateTime, date }) => dateTime !== undefined || date !== undefined, "start/end에는 dateTime 또는 date가 필요합니다.");
+      const calendarAttendee = z.object({
+        email: z.string().email().optional(),
+        id: idSchema.optional(),
+        displayName: z.string().max(200).optional(),
+        isOptional: z.boolean().optional(),
+        isResource: z.boolean().optional(),
+      }).refine(({ email, id }) => email !== undefined || id !== undefined, "참석자에는 email 또는 id가 필요합니다.");
+      const eventComponent = z.object({
+        eventId: idSchema.optional(),
+        summary: z.string().max(200),
+        description: z.string().max(5000).optional(),
+        location: z.string().max(100).optional(),
+        categoryId: idSchema.optional(),
+        start: calendarTime,
+        end: calendarTime,
+        transparency: z.enum(["OPAQUE", "TRANSPARENT"]).optional(),
+        visibility: z.enum(["PUBLIC", "PRIVATE"]).optional(),
+        attendees: z.array(calendarAttendee).max(100).optional(),
+        recurrence: z.array(z.string().max(500)).max(100).optional(),
+      });
+      const calendarPath = (userId: string, calendarId?: string, eventId?: string) => {
+        const base = calendarId === undefined
+          ? `/users/${pathSegment(userId, "userId")}/calendar/events`
+          : `/users/${pathSegment(userId, "userId")}/calendars/${pathSegment(calendarId, "calendarId")}/events`;
+        return eventId === undefined ? base : `${base}/${pathSegment(eventId, "eventId")}`;
+      };
+
+      const calendarEventCreate = z.object({
+        userId: idSchema.optional(),
+        calendarId: idSchema.optional(),
+        eventComponents: z.array(eventComponent).min(1).max(100),
+        sendNotification: z.boolean().default(true),
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_calendar_event_create", {
+        title: "일정 작성",
+        description: "기본 또는 지정 캘린더에 일정을 작성합니다. calendar Scope와 매 호출 confirm=true가 필요합니다.",
+        inputSchema: calendarEventCreate,
+      }, wrap(async ({ userId, calendarId, eventComponents, sendNotification, confirm }: { userId?: string; calendarId?: string; eventComponents: Array<Record<string, unknown>>; sendNotification?: boolean; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const resolvedUserId = api.getUserId(userId);
+        const response = await api.request("POST", calendarPath(resolvedUserId, calendarId), { requiredScopes: ["calendar"], readOnly: false, body: { eventComponents, sendNotification } });
+        return { status: response.status, calendar: projectCalendarEvents(response.data) };
+      }));
+
+      const calendarEventUpdate = z.object({
+        userId: idSchema.optional(),
+        calendarId: idSchema.optional(),
+        eventId: idSchema,
+        eventComponents: z.array(eventComponent).min(1).max(100),
+        sendNotification: z.boolean().default(true),
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_calendar_event_update", {
+        title: "일정 수정",
+        description: "일정을 수정합니다. 매 호출 confirm=true가 필요합니다.",
+        inputSchema: calendarEventUpdate,
+      }, wrap(async ({ userId, calendarId, eventId, eventComponents, sendNotification, confirm }: { userId?: string; calendarId?: string; eventId: string; eventComponents: Array<Record<string, unknown>>; sendNotification?: boolean; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const resolvedUserId = api.getUserId(userId);
+        const response = await api.request("PUT", calendarPath(resolvedUserId, calendarId, eventId), { requiredScopes: ["calendar"], readOnly: false, body: { eventComponents, sendNotification } });
+        return { status: response.status, calendar: projectCalendarEvents(response.data) };
+      }));
+
+      if (config.deleteEnabled) {
+        server.registerTool("works_calendar_event_delete", {
+          title: "일정 삭제",
+          description: "일정을 삭제합니다. 쓰기와 삭제를 각각 켜고 confirm=true로 승인해야 합니다.",
+          inputSchema: z.object({ userId: idSchema.optional(), calendarId: idSchema.optional(), eventId: idSchema, confirm: confirmSchema }),
+        }, wrap(async ({ userId, calendarId, eventId, confirm }: { userId?: string; calendarId?: string; eventId: string; confirm: boolean }) => {
+          requireWrite(config, confirm, true);
+          const resolvedUserId = api.getUserId(userId);
+          const response = await api.request("DELETE", calendarPath(resolvedUserId, calendarId, eventId), { requiredScopes: ["calendar"], readOnly: false });
+          return { deleted: true, status: response.status, calendarId, eventId };
+        }));
+      }
+
+      const botMessageInput = z.object({
+        botId: numericIdSchema,
+        userId: idSchema,
+        text: z.string().trim().min(1).max(2000),
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_bot_user_message_send", {
+        title: "Bot 사용자 메시지 전송",
+        description: "Bot이 사용자에게 텍스트 메시지를 전송합니다. bot.message와 bot Scope, 매 호출 confirm=true가 필요합니다.",
+        inputSchema: botMessageInput,
+      }, wrap(async ({ botId, userId, text: messageText, confirm }: { botId: number; userId: string; text: string; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const response = await api.request("POST", `/bots/${botId}/users/${pathSegment(userId, "userId")}/messages`, {
+          requiredScopes: ["bot.message", "bot"], readOnly: false,
+          body: { content: { type: "text", text: messageText } },
+        });
+        return { sent: true, status: response.status, botId, userId };
+      }));
+
+      const boardPostCreate = z.object({
+        boardId: numericIdSchema,
+        title: z.string().trim().min(1).max(200),
+        body: z.string().min(1).max(716800),
+        enableComment: z.boolean().default(true),
+        mustReadEndDate: dateSchema.optional(),
+        sendNotifications: z.boolean().default(true),
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_board_post_create", {
+        title: "게시판 글 작성",
+        description: "게시판 글을 작성합니다. NAVER_WORKS_WRITE_ENABLED=true와 confirm=true가 모두 필요하며 board Scope를 사용합니다.",
+        inputSchema: boardPostCreate,
+      }, wrap(async ({ boardId, title, body, enableComment, mustReadEndDate, sendNotifications, confirm }: { boardId: number; title: string; body: string; enableComment?: boolean; mustReadEndDate?: string; sendNotifications?: boolean; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const response = await api.request("POST", `/boards/${boardId}/posts`, {
+          requiredScopes: ["board"], readOnly: false,
+          body: { title, body, enableComment, ...(mustReadEndDate ? { mustReadEndDate } : {}), sendNotifications },
+        });
+        return { status: response.status, post: projectBoardPost(response.data) };
+      }));
+
+      const boardPostUpdate = z.object({
+        boardId: numericIdSchema,
+        postId: numericIdSchema,
+        title: z.string().trim().min(1).max(200),
+        body: z.string().min(1).max(716800),
+        enableComment: z.boolean().optional(),
+        mustReadEndDate: dateSchema.optional(),
+        sendNotifications: z.boolean().optional(),
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_board_post_update", {
+        title: "게시판 글 수정",
+        description: "게시판 글을 수정합니다. 매 호출 confirm=true가 필요합니다.",
+        inputSchema: boardPostUpdate,
+      }, wrap(async ({ boardId, postId, title, body, enableComment, mustReadEndDate, sendNotifications, confirm }: { boardId: number; postId: number; title: string; body: string; enableComment?: boolean; mustReadEndDate?: string; sendNotifications?: boolean; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const response = await api.request("PUT", `/boards/${boardId}/posts/${postId}`, {
+          requiredScopes: ["board"], readOnly: false,
+          body: { title, body, ...(enableComment !== undefined ? { enableComment } : {}), ...(mustReadEndDate !== undefined ? { mustReadEndDate } : {}), ...(sendNotifications !== undefined ? { sendNotifications } : {}) },
+        });
+        return { status: response.status, post: projectBoardPost(response.data) };
+      }));
+
+      if (config.deleteEnabled) {
+        server.registerTool("works_board_post_delete", {
+          title: "게시판 글 삭제",
+          description: "게시판 글을 삭제합니다. 쓰기와 삭제를 각각 켜고 confirm=true로 승인해야 합니다.",
+          inputSchema: z.object({ boardId: numericIdSchema, postId: numericIdSchema, confirm: confirmSchema }),
+        }, wrap(async ({ boardId, postId, confirm }: { boardId: number; postId: number; confirm: boolean }) => {
+          requireWrite(config, confirm, true);
+          const response = await api.request("DELETE", `/boards/${boardId}/posts/${postId}`, { requiredScopes: ["board"], readOnly: false });
+          return { deleted: true, status: response.status, boardId, postId };
+        }));
+      }
+
+      const notePostCreate = z.object({
+        groupId: groupIdSchema,
+        title: z.string().trim().min(1).max(200),
+        body: z.string().min(1).max(716800),
+        enableCollaboration: z.boolean().default(false),
+        isNotice: z.boolean().default(false),
+        sendNotifications: z.boolean().default(true),
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_group_note_post_create", {
+        title: "그룹 Note 글 작성",
+        description: "그룹 Note 글을 작성합니다. group.note Scope와 매 호출 confirm=true가 필요합니다.",
+        inputSchema: notePostCreate,
+      }, wrap(async ({ groupId, title, body, enableCollaboration, isNotice, sendNotifications, confirm }: { groupId: string; title: string; body: string; enableCollaboration?: boolean; isNotice?: boolean; sendNotifications?: boolean; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const response = await api.request("POST", `/groups/${pathSegment(groupId, "groupId")}/note/posts`, {
+          requiredScopes: ["group.note"], readOnly: false,
+          body: { title, body, enableCollaboration, isNotice, sendNotifications },
+        });
+        return { status: response.status, post: projectNotePost(response.data) };
+      }));
+
+      const notePostUpdate = z.object({
+        groupId: groupIdSchema,
+        postId: numericIdSchema,
+        title: z.string().trim().min(1).max(200),
+        body: z.string().min(1).max(716800),
+        enableCollaboration: z.boolean().optional(),
+        isNotice: z.boolean().optional(),
+        sendNotifications: z.boolean().optional(),
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_group_note_post_update", {
+        title: "그룹 Note 글 수정",
+        description: "그룹 Note 글을 수정합니다. 매 호출 confirm=true가 필요합니다.",
+        inputSchema: notePostUpdate,
+      }, wrap(async ({ groupId, postId, title, body, enableCollaboration, isNotice, sendNotifications, confirm }: { groupId: string; postId: number; title: string; body: string; enableCollaboration?: boolean; isNotice?: boolean; sendNotifications?: boolean; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const response = await api.request("PUT", `/groups/${pathSegment(groupId, "groupId")}/note/posts/${postId}`, {
+          requiredScopes: ["group.note"], readOnly: false,
+          body: { title, body, ...(enableCollaboration !== undefined ? { enableCollaboration } : {}), ...(isNotice !== undefined ? { isNotice } : {}), ...(sendNotifications !== undefined ? { sendNotifications } : {}) },
+        });
+        return { status: response.status, post: projectNotePost(response.data) };
+      }));
+
+      if (config.deleteEnabled) {
+        server.registerTool("works_group_note_post_delete", {
+          title: "그룹 Note 글 삭제",
+          description: "그룹 Note 글을 삭제합니다. 쓰기와 삭제를 각각 켜고 confirm=true로 승인해야 합니다.",
+          inputSchema: z.object({ groupId: groupIdSchema, postId: numericIdSchema, confirm: confirmSchema }),
+        }, wrap(async ({ groupId, postId, confirm }: { groupId: string; postId: number; confirm: boolean }) => {
+          requireWrite(config, confirm, true);
+          const response = await api.request("DELETE", `/groups/${pathSegment(groupId, "groupId")}/note/posts/${postId}`, { requiredScopes: ["group.note"], readOnly: false });
+          return { deleted: true, status: response.status, groupId, postId };
+        }));
+      }
+
+      const taskAssignee = z.object({ assigneeId: idSchema, status: z.enum(["TODO", "DONE"]).default("TODO") });
+      const taskCreate = z.object({
+        userId: idSchema.optional(),
+        assignorId: idSchema,
+        assignees: z.array(taskAssignee).min(1).max(20),
+        title: z.string().trim().min(1).max(200),
+        content: z.string().max(716800).default(""),
+        dueDate: dateSchema.optional(),
+        completionCondition: z.enum(["MUST_ALL", "ANY_ONE"]).default("MUST_ALL"),
+        categoryId: idSchema,
+        confirm: confirmSchema,
+      });
+      server.registerTool("works_task_create", {
+        title: "할 일 작성",
+        description: "할 일을 작성합니다. task Scope와 매 호출 confirm=true가 필요합니다.",
+        inputSchema: taskCreate,
+      }, wrap(async ({ userId, assignorId, assignees, title, content, dueDate, completionCondition, categoryId, confirm }: { userId?: string; assignorId: string; assignees: Array<{ assigneeId: string; status?: "TODO" | "DONE" }>; title: string; content?: string; dueDate?: string; completionCondition?: "MUST_ALL" | "ANY_ONE"; categoryId: string; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const resolvedUserId = api.getUserId(userId);
+        const response = await api.request("POST", `/users/${pathSegment(resolvedUserId, "userId")}/tasks`, {
+          requiredScopes: ["task"], readOnly: false,
+          body: { assignorId, assignees, title, content, ...(dueDate ? { dueDate } : {}), completionCondition, categoryId },
+        });
+        return { status: response.status, task: projectTask(response.data) };
+      }));
+
+      const taskUpdate = z.object({
+        taskId: idSchema,
+        title: z.string().trim().min(1).max(200).optional(),
+        content: z.string().max(716800).optional(),
+        dueDate: dateSchema.optional(),
+        assignees: z.array(taskAssignee).min(1).max(20).optional(),
+        completionCondition: z.enum(["MUST_ALL", "ANY_ONE"]).optional(),
+        confirm: confirmSchema,
+      }).refine(({ title, content, dueDate, assignees, completionCondition }) => title !== undefined || content !== undefined || dueDate !== undefined || assignees !== undefined || completionCondition !== undefined, "변경할 할 일 필드를 하나 이상 입력하세요.");
+      server.registerTool("works_task_update", {
+        title: "할 일 수정",
+        description: "할 일을 수정합니다. 매 호출 confirm=true가 필요합니다.",
+        inputSchema: taskUpdate,
+      }, wrap(async ({ taskId, title, content, dueDate, assignees, completionCondition, confirm }: { taskId: string; title?: string; content?: string; dueDate?: string; assignees?: Array<{ assigneeId: string; status?: "TODO" | "DONE" }>; completionCondition?: "MUST_ALL" | "ANY_ONE"; confirm: boolean }) => {
+        requireWrite(config, confirm);
+        const response = await api.request("PATCH", `/tasks/${pathSegment(taskId, "taskId")}`, {
+          requiredScopes: ["task"], readOnly: false,
+          body: { ...(title !== undefined ? { title } : {}), ...(content !== undefined ? { content } : {}), ...(dueDate !== undefined ? { dueDate } : {}), ...(assignees !== undefined ? { assignees } : {}), ...(completionCondition !== undefined ? { completionCondition } : {}) },
+        });
+        return { status: response.status, task: projectTask(response.data) };
+      }));
+
+      if (config.deleteEnabled) {
+        server.registerTool("works_task_delete", {
+          title: "할 일 삭제",
+          description: "할 일을 삭제합니다. 쓰기와 삭제를 각각 켜고 confirm=true로 승인해야 합니다.",
+          inputSchema: z.object({ taskId: idSchema, confirm: confirmSchema }),
+        }, wrap(async ({ taskId, confirm }: { taskId: string; confirm: boolean }) => {
+          requireWrite(config, confirm, true);
+          const response = await api.request("DELETE", `/tasks/${pathSegment(taskId, "taskId")}`, { requiredScopes: ["task"], readOnly: false });
+          return { deleted: true, status: response.status, taskId };
+        }));
+      }
+    }
 
     return server;
   };

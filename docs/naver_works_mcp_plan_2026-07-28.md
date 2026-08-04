@@ -2,7 +2,7 @@
 
 기준 문서: `C:\Users\Home\Downloads\Telegram Desktop\naver_works_free_mcp_plan.html`  
 기준일: 2026-08-03  
-결정: NAVER WORKS 읽기 MVP를 MCP `2026-07-28` 무상태 서버로 먼저 생성하고, 쓰기·관리 작업은 테넌트 검증과 별도 승인 뒤 추가한다.
+결정: NAVER WORKS 읽기 기본 모드와 MCP `2026-07-28` 무상태 서버를 유지하고, 쓰기·삭제·메시지 전송은 별도 Scope·환경변수·호출 승인으로 확장한다.
 
 ## 1. 기획 수정 판정
 
@@ -16,11 +16,11 @@
 | Free 읽기 확장 | 추천도 높음/매우 높음인 Calendar·User·Organization·Group·Bot과 공지에 필요한 Board·Group/Note·Task·Form을 읽기 전용으로 확장 | 새 `works_*` 조회 Tool과 mock 계약 테스트 추가 |
 | 추천도 중간 이하 API | Contact(중간), Mail·Drive·Audit·Security·Archive/Compliance(낮음 이하) | MCP Tool과 기본 Scope에서 제외 |
 | 공지사항 | Board의 recent/must/board post와 조직·그룹 Note의 `isNotice`를 각각 지원 | `works_board_must_read_posts_list`, `works_board_post_get`, `works_group_note_posts_list`, `works_group_note_post_get` |
-| 쓰기 승인 | Skill 문구만으로 강제하지 않음 | 변경 Tool 미등록; 후속 시 MCP 내부 승인 토큰 검증을 필수화 |
+| 쓰기 승인 | MCP 내부에서 강제 | `NAVER_WORKS_WRITE_ENABLED`가 꺼지면 Tool 미등록, 호출마다 `confirm=true`; 삭제는 `NAVER_WORKS_DELETE_ENABLED` 추가 |
 | 외부 콘텐츠 | 데이터로만 처리 | 캘린더 속성은 ID/이름/공개 여부/형식만, 일정은 설명·참석자 제거, 구성원은 최소 projection |
 | 기존 MCP 세션 방식 | 2026-07-28에 맞게 수정 | HTTP `createMcpHandler` strict modern + `legacy: reject`, per-request factory |
 | 서버 상태 저장 | 프로토콜 상태와 애플리케이션 상태 분리 | 세션 저장소 없음; API 호출별 새 `McpServer` 생성 |
-| 오류·재시도 | POST 자동 재시도 금지 | GET의 408/429/5xx만 제한 재시도, 쓰기 Tool 자체 미노출 |
+| 오류·재시도 | POST 자동 재시도 금지 | GET의 408/429/5xx만 제한 재시도, 쓰기 요청은 1회만 시도 |
 | 입출력 상한 | DoS 경계 추가 | HTTP 요청 1 MiB·15초, 상류 응답 2 MiB, 413/408 처리 |
 
 ## 2. MCP 2026-07-28 적용 체크
@@ -41,7 +41,7 @@
 
 - `src/config.ts`: 환경 변수, 인증 모드, Scope 정책, Host/Origin allowlist, 공개 상태 projection
 - `src/works-api.ts`: NAVER WORKS API 클라이언트, Bearer 토큰, Free 제한, GET 재시도, PII projection, mock fixture
-- `src/server.ts`: typed `works_*` read-only Tool 등록
+- `src/server.ts`: typed `works_*` read/write Tool 등록, 기본 OFF·confirm 게이트
 - `src/index.ts`: stdio 및 strict stateless Streamable HTTP `/mcp`, `/healthz`
 - `skills/naver-works/SKILL.md`: 자연어 업무 계층, 데이터/지시문 경계, 변경 승인 원칙
 - `.env.example`, `README.md`: 설치·실행·Hermes 연결 기준
@@ -74,9 +74,21 @@
 
 ### 보류
 
-- Calendar/Board/Bot 쓰기, 삭제, 관리 작업
+- Group/OrgUnit 관리, 첨부·파일, 댓글/반응 등 아직 등록하지 않은 쓰기·관리 작업
 - Mail·Drive(file.read) 및 Audit/Monitoring, 경영지원 API
 - 승인 토큰 저장·폐기·감사 추적(쓰기 Tool 활성화 시 별도 모듈)
+
+## 4-1. 승인형 쓰기 확장 검수 결과
+
+쓰기 기능은 현재 다음 범위로 구현했다.
+
+- 일정: `works_calendar_event_create`, `works_calendar_event_update`, `works_calendar_event_delete`
+- 게시판: `works_board_post_create`, `works_board_post_update`, `works_board_post_delete`
+- 그룹 Note: `works_group_note_post_create`, `works_group_note_post_update`, `works_group_note_post_delete`
+- 할 일: `works_task_create`, `works_task_update`, `works_task_delete`
+- Bot: `works_bot_user_message_send` (텍스트 사용자 메시지)
+
+모든 생성·수정 Tool은 일반 Scope와 `NAVER_WORKS_WRITE_ENABLED=true`가 필요하며, 호출 입력에 `confirm=true`가 없으면 실패한다. 삭제 Tool은 `NAVER_WORKS_DELETE_ENABLED=true`까지 켜야 `tools/list`에 나타난다. 기본 읽기 모드의 도구 목록에는 쓰기 Tool이 없어야 한다.
 
 ## 5. 검수 실행 순서
 

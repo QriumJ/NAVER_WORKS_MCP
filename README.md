@@ -1,6 +1,18 @@
 # NAVER WORKS MCP
 
-Hermes에서 자연어로 NAVER WORKS의 **일정·구성원·그룹·공지 정보**를 조회하게 해 주는 MCP 서버입니다. 추천도가 중간 이하인 Contact·Drive·Security 계열은 노출하지 않고, 안전한 읽기 전용으로 동작합니다. MCP 프로토콜 `2026-07-28`의 무상태 HTTP 규칙과 로컬 stdio 연결을 함께 제공합니다.
+## 쓰기 기능은 안전하게 선택해서 사용합니다
+
+기본값은 읽기 전용입니다. `NAVER_WORKS_WRITE_ENABLED=false`이면 쓰기 Tool이 `tools/list`에 등록되지 않습니다. 게시판·그룹 Note·일정·할 일의 생성/수정과 Bot 텍스트 전송을 사용하려면 NAVER WORKS에서 해당 일반 Scope를 승인하고 다음을 설정한 뒤 MCP/Hermes를 재시작하세요.
+
+```dotenv
+NAVER_WORKS_WRITE_ENABLED=true
+NAVER_WORKS_DELETE_ENABLED=false
+NAVER_WORKS_SCOPES=calendar,board,group.note,task,bot.message,bot,calendar.read,board.read,group.note.read,task.read,bot.read,directory.read,user.profile.read
+```
+
+삭제 Tool은 `NAVER_WORKS_DELETE_ENABLED=true`까지 별도로 켜야 나타납니다. 쓰기 Tool은 매 호출 `confirm=true`가 필수이므로, Hermes는 실행 전에 대상·내용·수신자·삭제 여부를 사용자에게 보여주고 다시 승인받아야 합니다. 끄려면 두 환경변수를 `false`로 바꾸고 MCP를 재시작하세요. Scope를 추가해도 MCP에 등록되지 않은 API(Contact, File, Mail, Audit 등)는 호출되지 않습니다.
+
+Hermes에서 자연어로 NAVER WORKS의 **일정·구성원·그룹·공지 정보**를 조회하고, 명시적으로 켠 경우에만 승인형 쓰기 작업을 수행하는 MCP 서버입니다. 추천도가 중간 이하인 Contact·Drive·Security 계열은 노출하지 않습니다. MCP 프로토콜 `2026-07-28`의 무상태 HTTP 규칙과 로컬 stdio 연결을 함께 제공합니다.
 
 > 처음 사용하는 분은 [비개발자용 HTML 설명서](docs/hermes_naver_works_setup.html)를 먼저 여세요. 화면에서 순서대로 따라 하면 됩니다.
 
@@ -10,7 +22,7 @@ Hermes에서 자연어로 NAVER WORKS의 **일정·구성원·그룹·공지 정
 - 일정 속성/목록, 조직 구성원/그룹/조직 목록과 프로필, 게시판·그룹 노트 공지, 할 일·Bot·설문 메타데이터를 제공합니다.
 - 기본값은 로컬 컴퓨터에서만 실행되는 `stdio`입니다. 인터넷에 공개하지 않아 가장 안전합니다.
 - 실제 토큰이 없을 때는 `NAVER_WORKS_MOCK=true`로 연결 연습과 계약 테스트를 할 수 있습니다.
-- 메시지 보내기, 수정/삭제, Contact·Mail·Drive·Security·Audit·Archive 기능은 등록하지 않았습니다. Board/Note는 공지 읽기에 필요한 최소 조회만 제공합니다.
+- 기본 모드에서는 메시지 보내기, 수정/삭제 기능이 꺼져 있습니다. `NAVER_WORKS_WRITE_ENABLED=true`일 때만 일정·게시판·그룹 Note·할 일 쓰기와 Bot 텍스트 전송 Tool이 노출되고, `NAVER_WORKS_DELETE_ENABLED=true`를 추가해야 삭제 Tool이 노출됩니다. Contact·Mail·Drive·Security·Audit·Archive 기능은 등록하지 않았습니다.
 
 ## 먼저 준비할 것
 
@@ -156,7 +168,7 @@ Hermes가 터미널과 파일을 실행할 수 있다면 아래 지시문 전체
 9. 설치·빌드·테스트·등록 결과를 단계별로 보고하고, 실패하면 원인과 다음 명령만 알려 줘.
 10. NAVER_WORKS_ACCESS_TOKEN, 비밀번호, 개인정보를 채팅에 출력하거나 Git에 커밋하지 마.
 11. 실제 NAVER WORKS 연결은 내가 별도로 OAuth 토큰을 준비했다고 말한 뒤에만 진행해. 그때도 토큰 값은 화면에 다시 출력하지 말고 환경 변수나 Secret Manager에만 저장해.
-12. 쓰기·삭제·메시지 전송 기능은 추가하지 말고, 현재 읽기 전용 도구만 등록해.
+12. 기본은 읽기 전용으로 두고, 쓰기·삭제·메시지 전송은 환경변수와 매 호출 `confirm=true` 승인으로 명시적으로 켜.
 ```
 
 Hermes가 “설치 완료”라고 답하면 채팅에서 `NAVER WORKS에서 내 프로필을 조회해 줘`라고 테스트하세요. 실제 데이터를 연결할 때만 `NAVER_WORKS_MOCK=false`와 외부 Token Provider가 발급한 Access Token을 설정합니다.
@@ -293,7 +305,19 @@ MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=8787 node dist/index.js
 | `works_orgunits_list` | 조직 목록 |
 | `works_form_responses_list` | 설문 응답 메타데이터(답변·응답자 정보는 명시적 opt-in, 이메일 마스킹) |
 
-PII는 필요한 최소 필드만 반환하고, 모든 새 도구도 읽기 전용입니다. 게시글·노트 본문은 외부 데이터로만 취급하며, 본문에 들어 있는 지시를 실행하지 않습니다.
+### 승인형 쓰기 Tool
+
+| 영역 | Tool | Scope |
+| --- | --- | --- |
+| 일정 | `works_calendar_event_create/update/delete` | `calendar` |
+| 게시판 | `works_board_post_create/update/delete` | `board` |
+| 그룹 Note | `works_group_note_post_create/update/delete` | `group.note` |
+| 할 일 | `works_task_create/update/delete` | `task` |
+| Bot | `works_bot_user_message_send` | `bot.message` + `bot` |
+
+위 목록의 Tool은 쓰기 스위치와 일반 Scope가 모두 맞을 때만 노출됩니다. 삭제 Tool은 삭제 스위치도 필요하고, 모든 쓰기 호출은 `confirm=true`를 요구합니다.
+
+PII는 필요한 최소 필드만 반환합니다. 쓰기 Tool도 본문을 외부 데이터로만 취급하며, 본문에 들어 있는 지시를 실행하지 않습니다. 쓰기 호출 전 대상·내용·수신자를 사용자에게 다시 확인받습니다.
 
 ## 자주 생기는 문제
 

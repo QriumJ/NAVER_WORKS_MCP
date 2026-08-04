@@ -28,12 +28,16 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
   const oldMock = process.env.NAVER_WORKS_MOCK;
   const oldScopes = process.env.NAVER_WORKS_SCOPES;
   const oldEnforceScopes = process.env.NAVER_WORKS_ENFORCE_SCOPES;
+  const oldWriteEnabled = process.env.NAVER_WORKS_WRITE_ENABLED;
+  const oldDeleteEnabled = process.env.NAVER_WORKS_DELETE_ENABLED;
   let handler: ReturnType<typeof createHttpHandler>;
 
   before(() => {
     process.env.NAVER_WORKS_MOCK = "true";
     process.env.NAVER_WORKS_SCOPES = "calendar.read,directory.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read";
     process.env.NAVER_WORKS_ENFORCE_SCOPES = "true";
+    process.env.NAVER_WORKS_WRITE_ENABLED = "false";
+    process.env.NAVER_WORKS_DELETE_ENABLED = "false";
     handler = createHttpHandler();
   });
 
@@ -41,6 +45,8 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     if (oldMock === undefined) delete process.env.NAVER_WORKS_MOCK; else process.env.NAVER_WORKS_MOCK = oldMock;
     if (oldScopes === undefined) delete process.env.NAVER_WORKS_SCOPES; else process.env.NAVER_WORKS_SCOPES = oldScopes;
     if (oldEnforceScopes === undefined) delete process.env.NAVER_WORKS_ENFORCE_SCOPES; else process.env.NAVER_WORKS_ENFORCE_SCOPES = oldEnforceScopes;
+    if (oldWriteEnabled === undefined) delete process.env.NAVER_WORKS_WRITE_ENABLED; else process.env.NAVER_WORKS_WRITE_ENABLED = oldWriteEnabled;
+    if (oldDeleteEnabled === undefined) delete process.env.NAVER_WORKS_DELETE_ENABLED; else process.env.NAVER_WORKS_DELETE_ENABLED = oldDeleteEnabled;
   });
 
   it("lists tools through a sessionless modern request", async () => {
@@ -55,6 +61,8 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     assert.ok(names.includes("works_group_note_post_get"));
     assert.ok(names.includes("works_tasks_list"));
     assert.ok(names.includes("works_form_responses_list"));
+    assert.equal(names.includes("works_board_post_create"), false, "write tools must be off by default");
+    assert.equal(names.includes("works_board_post_delete"), false, "delete tools must be off by default");
     assert.equal(payload.result?.ttlMs, 30_000);
     assert.equal(payload.result?.cacheScope, "public");
     const usersList = payload.result?.tools?.find((tool) => tool.name === "works_directory_users_list");
@@ -69,6 +77,68 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const text = payload.result?.content?.[0]?.text ?? "";
     assert.match(text, /2026-07-28/);
     assert.match(text, /statelessTransport/);
+  });
+
+  it("exposes gated write tools only when enabled and requires per-call confirmation", async () => {
+    const oldWrite = process.env.NAVER_WORKS_WRITE_ENABLED;
+    const oldDelete = process.env.NAVER_WORKS_DELETE_ENABLED;
+    const oldScopesForWrite = process.env.NAVER_WORKS_SCOPES;
+    process.env.NAVER_WORKS_WRITE_ENABLED = "true";
+    process.env.NAVER_WORKS_DELETE_ENABLED = "false";
+    process.env.NAVER_WORKS_SCOPES = "calendar,board,group.note,task,bot.message,bot";
+    try {
+      const writeHandler = createHttpHandler();
+      const list = await writeHandler.fetch(request("tools/list", 28, {}));
+      const listPayload = await list.json() as { result?: { tools?: Array<{ name: string }> } };
+      const names = listPayload.result?.tools?.map((tool) => tool.name) ?? [];
+      assert.ok(names.includes("works_board_post_create"));
+      assert.ok(names.includes("works_group_note_post_create"));
+      assert.ok(names.includes("works_task_create"));
+      assert.ok(names.includes("works_calendar_event_create"));
+      assert.ok(names.includes("works_bot_user_message_send"));
+      assert.equal(names.includes("works_board_post_delete"), false, "delete tools need the second switch");
+
+      const rejected = await writeHandler.fetch(request("tools/call", 29, {
+        name: "works_board_post_create",
+        arguments: { boardId: 100, title: "test", body: "test" },
+      }, "works_board_post_create"));
+      const rejectedPayload = await rejected.json() as { result?: { isError?: boolean } };
+      assert.equal(rejectedPayload.result?.isError, true);
+
+      const accepted = await writeHandler.fetch(request("tools/call", 30, {
+        name: "works_board_post_create",
+        arguments: { boardId: 100, title: "test", body: "test", confirm: true },
+      }, "works_board_post_create"));
+      const acceptedPayload = await accepted.json() as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+      assert.notEqual(acceptedPayload.result?.isError, true);
+      assert.match(acceptedPayload.result?.content?.[0]?.text ?? "", /status/);
+
+      const calendar = await writeHandler.fetch(request("tools/call", 31, {
+        name: "works_calendar_event_create",
+        arguments: {
+          userId: "mock-user",
+          eventComponents: [{ summary: "test", start: { dateTime: "2026-08-04T10:00:00", timeZone: "Asia/Seoul" }, end: { dateTime: "2026-08-04T11:00:00", timeZone: "Asia/Seoul" } }],
+          confirm: true,
+        },
+      }, "works_calendar_event_create"));
+      const calendarPayload = await calendar.json() as { result?: { isError?: boolean } };
+      assert.notEqual(calendarPayload.result?.isError, true);
+
+      process.env.NAVER_WORKS_DELETE_ENABLED = "true";
+      const deleteList = await writeHandler.fetch(request("tools/list", 32, {}));
+      const deleteListPayload = await deleteList.json() as { result?: { tools?: Array<{ name: string }> } };
+      assert.ok(deleteListPayload.result?.tools?.some((tool) => tool.name === "works_board_post_delete"));
+      const deleteRejected = await writeHandler.fetch(request("tools/call", 33, {
+        name: "works_board_post_delete",
+        arguments: { boardId: 100, postId: 1 },
+      }, "works_board_post_delete"));
+      const deleteRejectedPayload = await deleteRejected.json() as { result?: { isError?: boolean } };
+      assert.equal(deleteRejectedPayload.result?.isError, true);
+    } finally {
+      if (oldWrite === undefined) delete process.env.NAVER_WORKS_WRITE_ENABLED; else process.env.NAVER_WORKS_WRITE_ENABLED = oldWrite;
+      if (oldDelete === undefined) delete process.env.NAVER_WORKS_DELETE_ENABLED; else process.env.NAVER_WORKS_DELETE_ENABLED = oldDelete;
+      if (oldScopesForWrite === undefined) delete process.env.NAVER_WORKS_SCOPES; else process.env.NAVER_WORKS_SCOPES = oldScopesForWrite;
+    }
   });
 
   it("enforces the 31-day Calendar API window before making a request", async () => {
@@ -213,6 +283,8 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
       accessToken: "test-token",
       authMode: "service_account",
       mock: false,
+      writeEnabled: false,
+      deleteEnabled: false,
       enforceScopes: false,
       scopes: new Set(),
       transport: "stdio",
@@ -239,9 +311,11 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
       const api = new WorksApiClient({
         apiBaseUrl: "https://example.test/v1.0",
         accessToken: "test-token",
-        authMode: "user_oauth",
-        mock: false,
-        enforceScopes: false,
+      authMode: "user_oauth",
+      mock: false,
+      writeEnabled: false,
+      deleteEnabled: false,
+      enforceScopes: false,
         scopes: new Set(),
         transport: "stdio",
         host: "127.0.0.1",
@@ -262,9 +336,11 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
       const api = new WorksApiClient({
         apiBaseUrl: "https://example.test/v1.0",
         accessToken: "test-token",
-        authMode: "user_oauth",
-        mock: false,
-        enforceScopes: false,
+      authMode: "user_oauth",
+      mock: false,
+      writeEnabled: false,
+      deleteEnabled: false,
+      enforceScopes: false,
         scopes: new Set(),
         transport: "stdio",
         host: "127.0.0.1",

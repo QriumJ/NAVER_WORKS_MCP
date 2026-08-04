@@ -10,6 +10,10 @@ export interface AppConfig {
   authMode: AuthMode;
   defaultUserId?: string;
   mock: boolean;
+  /** Write tools are opt-in and absent from tools/list when disabled. */
+  writeEnabled: boolean;
+  /** Destructive delete tools require a second opt-in. */
+  deleteEnabled: boolean;
   enforceScopes: boolean;
   scopes: ReadonlySet<string>;
   transport: "stdio" | "http";
@@ -76,12 +80,20 @@ export function loadConfig(): AppConfig {
     throw new Error("MCP_PORT must be an integer between 1 and 65535");
   }
 
+  const writeEnabled = boolEnv("NAVER_WORKS_WRITE_ENABLED", false);
+  const deleteEnabled = boolEnv("NAVER_WORKS_DELETE_ENABLED", false);
+  if (deleteEnabled && !writeEnabled) {
+    throw new Error("NAVER_WORKS_DELETE_ENABLED requires NAVER_WORKS_WRITE_ENABLED=true");
+  }
+
   return {
     apiBaseUrl: parsedBase.toString().replace(/\/$/, ""),
     accessToken: env("NAVER_WORKS_ACCESS_TOKEN"),
     authMode,
     defaultUserId: env("NAVER_WORKS_USER_ID"),
     mock,
+    writeEnabled,
+    deleteEnabled,
     enforceScopes: boolEnv("NAVER_WORKS_ENFORCE_SCOPES", true),
     scopes: new Set(scopeValues),
     transport,
@@ -98,6 +110,8 @@ export function publicConfig(config: AppConfig) {
     apiBaseUrl: config.apiBaseUrl,
     authMode: config.authMode,
     mock: config.mock,
+    writeEnabled: config.writeEnabled,
+    deleteEnabled: config.deleteEnabled,
     enforceScopes: config.enforceScopes,
     configuredScopes: [...config.scopes].sort(),
     tokenConfigured: Boolean(config.accessToken),
