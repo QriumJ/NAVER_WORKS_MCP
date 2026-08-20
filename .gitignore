@@ -5,4 +5,16 @@ dist/
 !.env.example
 coverage/
 *.log
+__pycache__/
+*.py[cod]
 .tools/
+
+# Local release archives and temporary work directories; do not publish these.
+*_PACKAGE*.zip
+*_SAFE_PACKAGE*.zip
+NAVER_WORKS_OAuth_Helper_Safe*/
+NAVER_WORKS_OAuth_Helper_Safe*.zip
+NAVER_WORKS_MCP_FULL_SCOPE_PACKAGE_*/
+_workspace/
+cobalt-hermes-profile/
+freebuff2api-wokers/

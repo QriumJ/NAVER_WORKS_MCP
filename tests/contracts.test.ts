@@ -34,10 +34,10 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
 
   before(() => {
     process.env.NAVER_WORKS_MOCK = "true";
-    process.env.NAVER_WORKS_SCOPES = "calendar.read,directory.read,contact.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read";
+    process.env.NAVER_WORKS_SCOPES = "openid,profile,email,audit,audit.read,board,board.read,bot,bot.message,bot.read,calendar,calendar.read,contact,contact.read,directory,directory.read,form,form.read,group,group.folder,group.folder.read,group.note,group.note.read,group.read,orgunit,orgunit.read,security.external-browser,security.external-browser.read,task,task.read,user,user.email.read,user.profile.read,user.read";
     process.env.NAVER_WORKS_ENFORCE_SCOPES = "true";
-    process.env.NAVER_WORKS_WRITE_ENABLED = "false";
-    process.env.NAVER_WORKS_DELETE_ENABLED = "false";
+    process.env.NAVER_WORKS_WRITE_ENABLED = "true";
+    process.env.NAVER_WORKS_DELETE_ENABLED = "true";
     handler = createHttpHandler();
   });
 
@@ -64,8 +64,10 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     assert.ok(names.includes("works_contacts_list"));
     assert.ok(names.includes("works_user_contacts_list"));
     assert.ok(names.includes("works_contact_get"));
-    assert.equal(names.includes("works_board_post_create"), false, "write tools must be off by default");
-    assert.equal(names.includes("works_board_post_delete"), false, "delete tools must be off by default");
+    assert.ok(names.includes("works_board_post_create"), "write tools are available in the full initial configuration");
+    assert.ok(names.includes("works_board_post_delete"), "delete tools are available in the full initial configuration");
+    assert.ok(names.includes("works_api_call"), "all supported API scope areas have a guarded generic API tool");
+    assert.ok(names.includes("works_oidc_claims_get"), "OIDC claims tool is registered when openid/profile/email are configured");
     assert.equal(payload.result?.ttlMs, 30_000);
     assert.equal(payload.result?.cacheScope, "public");
     const usersList = payload.result?.tools?.find((tool) => tool.name === "works_directory_users_list");
@@ -85,6 +87,36 @@ describe("NAVER WORKS MCP 2026-07-28 contract", () => {
     const text = payload.result?.content?.[0]?.text ?? "";
     assert.match(text, /2026-07-28/);
     assert.match(text, /statelessTransport/);
+  });
+
+  it("covers extra Audit, Security, and group-folder API areas through the guarded API tool", async () => {
+    const read = await handler.fetch(request("tools/call", 3, {
+      name: "works_api_call",
+      arguments: { apiArea: "audit", method: "GET", path: "/audits/policy-groups" },
+    }, "works_api_call"));
+    const readPayload = await read.json() as { result?: { isError?: boolean } };
+    assert.notEqual(readPayload.result?.isError, true);
+
+    const rejectedWrite = await handler.fetch(request("tools/call", 4, {
+      name: "works_api_call",
+      arguments: { apiArea: "securityExternalBrowser", method: "POST", path: "/security/external-browser/enable" },
+    }, "works_api_call"));
+    const rejectedPayload = await rejectedWrite.json() as { result?: { isError?: boolean } };
+    assert.equal(rejectedPayload.result?.isError, true, "state changes still need an explicit confirmation");
+
+    const acceptedWrite = await handler.fetch(request("tools/call", 5, {
+      name: "works_api_call",
+      arguments: { apiArea: "groupFolder", method: "GET", path: "/groups/mock-group/folder" },
+    }, "works_api_call"));
+    const acceptedPayload = await acceptedWrite.json() as { result?: { isError?: boolean } };
+    assert.notEqual(acceptedPayload.result?.isError, true);
+
+    const traversal = await handler.fetch(request("tools/call", 5, {
+      name: "works_api_call",
+      arguments: { apiArea: "audit", method: "GET", path: "/audits/../../users" },
+    }, "works_api_call"));
+    const traversalPayload = await traversal.json() as { result?: { isError?: boolean } };
+    assert.equal(traversalPayload.result?.isError, true, "API area checks reject traversal before URL resolution");
   });
 
   it("exposes gated write tools only when enabled and requires per-call confirmation", async () => {

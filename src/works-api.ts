@@ -593,6 +593,9 @@ export class WorksApiClient {
 
   async request<T>(method: string, path: string, options: { query?: Record<string, string | number | undefined>; requiredScopes?: string[]; readOnly?: boolean; body?: unknown } = {}): Promise<ApiResponse<T>> {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    if (normalizedPath.includes("\\") || /%(2e|2f|5c)/i.test(normalizedPath) || normalizedPath.split("/").some((segment) => segment === "." || segment === "..")) {
+      throw new WorksApiError("NAVER WORKS API path에 인코딩·상대 경로·역슬래시를 사용할 수 없습니다.");
+    }
     const readOnly = options.readOnly ?? method.toUpperCase() === "GET";
     if (this.config.authMode === "service_account" && SERVICE_ACCOUNT_PROHIBITED.some((pattern) => pattern.test(normalizedPath))) {
       throw new WorksApiError(`Service Account에서 금지된 NAVER WORKS API 경로입니다: ${normalizedPath}`);

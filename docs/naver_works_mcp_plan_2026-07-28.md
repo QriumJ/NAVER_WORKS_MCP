@@ -1,6 +1,6 @@
 # NAVER WORKS MCP 기획 수정·생성·검수본
 
-기준 문서: `C:\Users\Home\Downloads\Telegram Desktop\naver_works_free_mcp_plan.html`  
+기준 문서: 사용자 제공 NAVER WORKS MCP 기획 HTML
 기준일: 2026-08-03  
 결정: NAVER WORKS 읽기 기본 모드와 MCP `2026-07-28` 무상태 서버를 유지하고, 쓰기·삭제·메시지 전송은 별도 Scope·환경변수·호출 승인으로 확장한다.
 

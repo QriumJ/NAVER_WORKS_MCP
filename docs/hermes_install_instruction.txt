@@ -1,0 +1,91 @@
+NAVER WORKS MCP 상세 설치 지시문 (Hermes에 전체 복사해서 붙여넣기)
+
+아래 저장소의 NAVER WORKS MCP를 내 Hermes 환경에 안전하게 설치하고 연결해 줘.
+
+저장소: https://github.com/QriumJ/NAVER_WORKS_MCP
+초보자 가이드: https://github.com/QriumJ/NAVER_WORKS_MCP/blob/main/docs/hermes_naver_works_setup.html
+상세 설치 지시문 원문: https://raw.githubusercontent.com/QriumJ/NAVER_WORKS_MCP/main/docs/hermes_install_instruction.txt
+
+[소스 고정]
+main의 오래된 0e61193d 계열은 읽기 전용 8개 Tool만 포함할 수 있다. 쓰기·삭제·works_api_call이 포함된 승인 소스는 `eef97ff66bfbe4c11647e947d07da07d4743f9f8`이다. 이 commit을 가져올 수 없으면 main을 임의로 사용하지 말고 중단해.
+
+[목표]
+- 먼저 Mock 모드로 설치·빌드·MCP 연결을 검증한다.
+- 실제 NAVER WORKS OAuth 토큰은 내가 별도로 준비한 뒤에만 연결한다.
+- 초기 설정에서는 전체 Scope 영역의 Tool을 등록한다. 실제 API 권한은 NAVER WORKS Developer Console의 Scope, 새 Access Token, 요금제, 관리자 정책이 결정한다.
+- 변경·삭제·메시지 전송 요청은 매번 대상과 내용을 나에게 보여 준 뒤 confirm=true로만 실행한다.
+- 작업 전 초보자용 HTML 가이드의 해당 단계(설치, OAuth, Docker 실제 연결)를 먼저 읽고, 그 가이드와 이 지시문의 순서를 맞춰 진행한다.
+
+[현재 OAuth 기본 Scope]
+Developer Console에서 현재 선택된 권한에 맞춰 아래 Scope만 기본 요청해.
+openid, profile, email, board, board.read, calendar, calendar.read, contact, contact.read,
+directory.read, form, form.read, group.folder.read, group.note.read, group.read, orgunit.read,
+security.external-browser, security.external-browser.read, task, task.read,
+user.email.read, user.profile.read, user.read
+audit*, bot*, directory, group, group.folder, group.note, orgunit, user 같은 미선택 Scope는 요청하지 마. 해당 권한을 나중에 Developer Console에서 추가한 경우에만 `--scopes`로 명시해.
+
+[반드시 지킬 안전 규칙]
+1. 시작 시 운영체제(Windows/Ubuntu/Linux), 현재 작업 경로, Hermes가 Docker 컨테이너 안인지, 터미널·파일 수정 권한이 있는지 확인하고 짧게 보고해.
+2. 기존 프로젝트·Docker 컨테이너·설정 파일을 삭제, 초기화, 덮어쓰기, 재생성하지 마. 먼저 경로와 Git 상태를 확인하고, NAVER WORKS MCP 관련 변경만 최소 범위로 적용해.
+3. Client Secret, Authorization Code, Access Token, .env의 실제 값, 비밀번호, 개인정보를 나에게 요청·출력·로그·Git 커밋·채팅 메시지에 포함하지 마.
+4. 토큰은 프로젝트 루트 .env 또는 내가 지정한 Secret Manager에만 보관해. config.yaml, Dockerfile, compose.yaml에는 토큰을 중복 기록하지 마.
+5. 명령이 실패하면 추측해서 반복하지 말고, 실패 원인·실행한 명령·다음 한 단계만 보고해. 외부 계정 설정이나 권한 부여가 필요한 경우에는 내 승인을 기다려.
+
+[1단계: 환경 확인]
+1. Node.js, npm, Git의 설치 여부와 버전을 확인해. Node.js는 20.11 이상이어야 한다.
+2. Docker 환경이면 Hermes와 MCP가 같은 컨테이너인지, 서로 다른 컨테이너인지 확인해.
+3. 기존 프로젝트가 있으면 Git 상태와 현재 경로를 확인해. 없다면 아래 저장소를 내려받아.
+   git clone https://github.com/QriumJ/NAVER_WORKS_MCP.git NAVER_WORKS_MCP
+4. 프로젝트 경로를 확인한 뒤 그 경로에서만 작업해.
+
+[2단계: 설치와 Mock 검증]
+1. 프로젝트 폴더에서 npm install, npm run build, npm test를 순서대로 실행해.
+2. 실제 토큰 없이 Mock 모드를 사용해. .env가 없다면 .env.example을 복사해 .env를 만들고 아래 값을 적용해.
+   MCP_TRANSPORT=stdio
+   NAVER_WORKS_MOCK=true
+   NAVER_WORKS_USER_ID=mock-user
+3. 테스트가 모두 통과하는지 확인해. 테스트 개수는 checkout한 commit의 실제 결과를 그대로 보고해.
+4. MCP 도구 목록과 works_health를 호출해 Mock 연결을 확인해. 실제 NAVER WORKS API 호출은 아직 하지 마.
+
+[3단계: Hermes에 MCP 등록]
+1. Hermes와 MCP가 같은 PC 또는 같은 컨테이너라면 stdio로 등록해.
+   - command: node
+   - args: 프로젝트 절대 경로의 dist/index.js
+   - cwd: 프로젝트 루트
+2. 기존 Hermes 컨테이너에 /opt/data/NAVER_WORKS_MCP가 있으면 새 Docker 컨테이너를 만들지 말고 그 경로를 사용해.
+   - 실행 파일: /opt/data/NAVER_WORKS_MCP/dist/index.js
+   - cwd: /opt/data/NAVER_WORKS_MCP
+   - `/opt/data/NAVER_WORKS_MCP/dist/src/index.js`는 오래된 읽기 전용 8개 Tool 빌드일 수 있으니 사용하지 마.
+   - /opt/data/config.yaml의 NAVER WORKS MCP 항목에 NAVER_WORKS_MOCK=true 또는 빈 NAVER_WORKS_ACCESS_TOKEN이 있으면 제거해. 환경변수가 .env보다 우선해 실제 설정을 덮어쓸 수 있다.
+3. Hermes와 MCP가 서로 다른 Docker 컨테이너일 때만 compose.yaml의 naver-works-mcp HTTP 서비스를 사용해.
+   - MCP 주소: http://naver-works-mcp:8787/mcp
+   - MCP_HOST=0.0.0.0, 충분히 긴 MCP_SHARED_SECRET, MCP_ALLOWED_HOSTS를 설정한다.
+   - MCP_SHARED_SECRET은 출력하지 않는다.
+4. Hermes를 재시작하거나 MCP 등록을 다시 읽게 한 뒤, `NAVER WORKS에서 내 프로필을 조회해 줘.`로 Mock 연결을 확인해.
+
+[4단계: 실제 OAuth 연결은 내가 승인한 뒤에만]
+1. 내가 실제 연결을 승인하면 Windows 호스트에서 run_naver_works_oauth.bat를 실행하도록 안내해. 배치 시작 시 Developer Console 앱 목록(https://dev.worksmobile.com/kr/console/openapi/v2/app/list/view)과 Admin Console 권한 관리(https://admin.worksmobile.com/security/admin)를 기본 브라우저에서 연다. 이 도우미는 Cloudflare 임시 HTTPS Redirect URL, 로그인, 토큰 교환, .env 저장을 돕는다. 이 설치의 기본 SSO 도메인은 `knocmaint.by-works.net`이며, 다른 조직이면 `--domain` 또는 `NAVER_WORKS_DOMAIN`으로 바꾼다.
+2. 임시 Redirect URL이 표시되면 내가 NAVER WORKS Developer Console에 정확히 등록·저장해야 한다. 이 Console 저장 동작은 대신 실행하지 마.
+   인증 과정에서 Developer Console의 웹훅 등록 또는 확인이 필요한 경우에는 김형진 차장에게 문의하도록 안내해. 웹훅 주소와 이벤트 범위는 임의로 만들거나 변경하지 마.
+3. OAuth가 끝난 후 생성된 .env 파일 자체만 SFTP로 /opt/data/NAVER_WORKS_MCP/.env에 업로드하도록 안내해. 토큰 문자열을 채팅으로 옮기지 마.
+4. Developer Console에서 권한을 추가·변경하면 OAuth 배치를 다시 실행해 새 토큰과 새 .env를 만들어야 한다.
+5. 전체 Tool은 기본 등록하지만, 실제 호출은 Console Scope·Access Token·요금제·관리자 정책이 허용한 경우에만 가능하다. 쓰기·삭제·메시지 전송에는 confirm=true가 필수다.
+6. OAuth 완료 후 `.env`를 갱신할 때는 HTML 가이드의 `Docker 실제 연결값 주입` 절을 함께 확인해. 기존 `.env`를 덮어쓸 때는 먼저 백업하고, 아래 비밀값은 채팅에 출력하지 마.
+   - `NAVER_WORKS_MOCK=false`
+   - `NAVER_WORKS_ACCESS_TOKEN`에는 OAuth로 새로 발급된 토큰
+   - `NAVER_WORKS_AUTH_MODE=user_oauth`
+   - `NAVER_WORKS_USER_ID=me`
+   - `NAVER_WORKS_ENFORCE_SCOPES=true`
+   - 쓰기 기능이 필요할 때만 `NAVER_WORKS_WRITE_ENABLED=true`
+   - 삭제 기능이 필요할 때만 `NAVER_WORKS_DELETE_ENABLED=true`
+7. 갱신한 `.env` 파일 자체만 SFTP로 `/opt/data/NAVER_WORKS_MCP/.env`에 업로드하고 Hermes를 재시작해. 호스트의 환경변수를 Docker에 자동 전달한다고 가정하지 마. 업로드 후에는 Token 문자열을 요청·출력하지 말고 `works_health`의 연결 상태, Mock 여부, Scope 설정 여부만 확인해.
+
+[완료 보고 형식]
+아래 항목만 표로 간단히 보고해.
+- 운영체제 / Docker 여부 / 프로젝트 절대 경로
+- Node.js·npm·Git 확인 결과
+- 빌드 결과와 테스트 결과
+- Hermes MCP 등록 방식(stdio 또는 HTTP)과 실행 경로
+- works_health와 Mock 프로필 조회 결과(토큰·개인정보는 제외)
+- 실제 OAuth 연결 여부: 아직 미연결 또는 사용자 승인 후 연결됨
+- 내가 다음에 할 일 한 가지

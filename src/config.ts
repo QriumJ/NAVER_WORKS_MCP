@@ -7,12 +7,14 @@ export type AuthMode = "user_oauth" | "service_account";
 export interface AppConfig {
   apiBaseUrl: string;
   accessToken?: string;
+  /** OIDC ID Token; never returned by health or error messages. */
+  idToken?: string;
   authMode: AuthMode;
   defaultUserId?: string;
   mock: boolean;
-  /** Write tools are opt-in and absent from tools/list when disabled. */
+  /** Set false only when an operator wants to hide state-changing tools. */
   writeEnabled: boolean;
-  /** Destructive delete tools require a second opt-in. */
+  /** Set false only when an operator wants to hide destructive tools. */
   deleteEnabled: boolean;
   enforceScopes: boolean;
   scopes: ReadonlySet<string>;
@@ -70,7 +72,7 @@ export function loadConfig(): AppConfig {
     throw new Error("Remote HTTP binding requires an MCP_SHARED_SECRET of at least 32 characters and a TLS-authenticated reverse proxy");
   }
 
-  const scopeValues = (env("NAVER_WORKS_SCOPES") ?? "calendar.read,directory.read,contact.read,user.profile.read,board.read,group.read,group.note.read,task.read,bot.read,orgunit.read,form.read")
+  const scopeValues = (env("NAVER_WORKS_SCOPES") ?? "openid,profile,email,audit,audit.read,board,board.read,bot,bot.message,bot.read,calendar,calendar.read,contact,contact.read,directory,directory.read,form,form.read,group,group.folder,group.folder.read,group.note,group.note.read,group.read,orgunit,orgunit.read,security.external-browser,security.external-browser.read,task,task.read,user,user.email.read,user.profile.read,user.read")
     .split(/[\s,]+/)
     .map((scope) => scope.trim())
     .filter(Boolean);
@@ -80,8 +82,8 @@ export function loadConfig(): AppConfig {
     throw new Error("MCP_PORT must be an integer between 1 and 65535");
   }
 
-  const writeEnabled = boolEnv("NAVER_WORKS_WRITE_ENABLED", false);
-  const deleteEnabled = boolEnv("NAVER_WORKS_DELETE_ENABLED", false);
+  const writeEnabled = boolEnv("NAVER_WORKS_WRITE_ENABLED", true);
+  const deleteEnabled = boolEnv("NAVER_WORKS_DELETE_ENABLED", true);
   if (deleteEnabled && !writeEnabled) {
     throw new Error("NAVER_WORKS_DELETE_ENABLED requires NAVER_WORKS_WRITE_ENABLED=true");
   }
@@ -89,6 +91,7 @@ export function loadConfig(): AppConfig {
   return {
     apiBaseUrl: parsedBase.toString().replace(/\/$/, ""),
     accessToken: env("NAVER_WORKS_ACCESS_TOKEN"),
+    idToken: env("NAVER_WORKS_ID_TOKEN"),
     authMode,
     defaultUserId: env("NAVER_WORKS_USER_ID"),
     mock,
@@ -115,6 +118,7 @@ export function publicConfig(config: AppConfig) {
     enforceScopes: config.enforceScopes,
     configuredScopes: [...config.scopes].sort(),
     tokenConfigured: Boolean(config.accessToken),
+    idTokenConfigured: Boolean(config.idToken),
     defaultUserConfigured: Boolean(config.defaultUserId),
     statelessTransport: true,
   };
